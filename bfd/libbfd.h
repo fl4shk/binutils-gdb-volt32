@@ -1316,6 +1316,13 @@ static const char *const bfd_reloc_code_real_names[] = { "@@uninitialized@@",
 
   "BFD_RELOC_MOXIE_10_PCREL",
 
+  "BFD_RELOC_VOLT32_G2_G3_G5_SIMM12",
+  "BFD_RELOC_VOLT32_G7_ISIMM11",
+  "BFD_RELOC_VOLT32_G7_JIMM4",
+  "BFD_RELOC_VOLT32_G8_IIMM5",
+  "BFD_RELOC_VOLT32_G8_JIMM5",
+  "BFD_RELOC_VOLT32_G9_IMM6",
+
   "BFD_RELOC_FT32_10",
   "BFD_RELOC_FT32_20",
   "BFD_RELOC_FT32_17",

@@ -96,6 +96,7 @@
 #define ARCH_v850
 #define ARCH_vax
 #define ARCH_visium
+#define ARCH_volt32
 #define ARCH_wasm32
 #define ARCH_xstormy16
 #define ARCH_xc16x
@@ -531,6 +532,11 @@ disassembler (enum bfd_architecture a,
 #ifdef ARCH_moxie
     case bfd_arch_moxie:
       disassemble = print_insn_moxie;
+      break;
+#endif
+#ifdef ARCH_volt32
+    case bfd_arch_volt32:
+      disassemble = print_insn_volt32;
       break;
 #endif
 #ifdef ARCH_iq2000

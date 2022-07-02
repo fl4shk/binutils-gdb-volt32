@@ -1037,6 +1037,9 @@ case "${target}" in
   moxie-*-*)
     noconfigdirs="$noconfigdirs"
     ;;
+  volt32-*-*)
+    noconfigdirs="$noconfigdirs target-libgloss gdb opcodes gas ld binutils"
+    ;;
   h8300*-*-*)
     noconfigdirs="$noconfigdirs target-libgloss"
     ;;
