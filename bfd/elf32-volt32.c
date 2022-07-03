@@ -29,6 +29,8 @@
 #include "elf-bfd.h"
 #include "elf/volt32.h"
 /* -------- */
+#define volt32_reloc bfd_elf_generic_reloc
+/* -------- */
 static reloc_howto_type volt32_elf_howto_table [] =
 {
   /* This reloc does nothing. */
@@ -39,7 +41,7 @@ static reloc_howto_type volt32_elf_howto_table [] =
          false,                 /* pc_relative */
          0,                     /* bitpos */
          complain_overflow_dont, /* complain_on_overflow */
-         bfd_elf_generic_reloc, /* special_function */
+         volt32_reloc,          /* special_function */
          "R_VOLT32_NONE",       /* name */
          false,                 /* partial_inplace */
          0,                     /* src_mask */
@@ -54,7 +56,7 @@ static reloc_howto_type volt32_elf_howto_table [] =
          false,                 /* pc_relative */
          0,                     /* bitpos */
          complain_overflow_bitfield, /* complain_on_overflow */
-         bfd_elf_generic_reloc, /* special_function */
+         volt32_reloc,          /* special_function */
          "R_VOLT32_32",         /* name */
          false,                 /* partial_inplace */
          0x00000000,            /* src_mask */
@@ -68,7 +70,7 @@ static reloc_howto_type volt32_elf_howto_table [] =
          false,                 /* pc_relative */
          3,                     /* bitpos */
          complain_overflow_signed, /* complain_on_overflow */
-         bfd_elf_generic_reloc, /* special_function */
+         volt32_reloc,          /* special_function */
          "R_VOLT32_G2_G3_G5_SIMM12",/* name */
          false,                 /* partial_inplace */
          0x00000000,            /* src_mask */
@@ -82,7 +84,7 @@ static reloc_howto_type volt32_elf_howto_table [] =
          false,                 /* pc_relative */
          4,                     /* bitpos */
          complain_overflow_signed, /* complain_on_overflow */
-         bfd_elf_generic_reloc, /* special_function */
+         volt32_reloc,          /* special_function */
          "R_VOLT32_G7_ISIMM11", /* name */
          false,                 /* partial_inplace */
          0x00000000,            /* src_mask */
@@ -95,7 +97,7 @@ static reloc_howto_type volt32_elf_howto_table [] =
          false,                 /* pc_relative */
          1,                     /* bitpos */
          complain_overflow_unsigned, /* complain_on_overflow */
-         bfd_elf_generic_reloc, /* special_function */
+         volt32_reloc,          /* special_function */
          "R_VOLT32_G7_JIMM4",   /* name */
          false,                 /* partial_inplace */
          0x00000000,            /* src_mask */
@@ -109,7 +111,7 @@ static reloc_howto_type volt32_elf_howto_table [] =
          false,                 /* pc_relative */
          10,                    /* bitpos */
          complain_overflow_unsigned, /* complain_on_overflow */
-         bfd_elf_generic_reloc, /* special_function */
+         volt32_reloc,          /* special_function */
          "R_VOLT32_G8_IIMM5",   /* name */
          false,                 /* partial_inplace */
          0x00000000,            /* src_mask */
@@ -122,7 +124,7 @@ static reloc_howto_type volt32_elf_howto_table [] =
          false,                 /* pc_relative */
          5,                     /* bitpos */
          complain_overflow_unsigned, /* complain_on_overflow */
-         bfd_elf_generic_reloc, /* special_function */
+         volt32_reloc,          /* special_function */
          "R_VOLT32_G8_JIMM5",   /* name */
          false,                 /* partial_inplace */
          0x00000000,            /* src_mask */
@@ -136,11 +138,25 @@ static reloc_howto_type volt32_elf_howto_table [] =
          false,                 /* pc_relative */
          4,                     /* bitpos */
          complain_overflow_unsigned, /* complain_on_overflow */
-         bfd_elf_generic_reloc, /* special_function */
+         volt32_reloc,          /* special_function */
          "R_VOLT32_G9_IMM6",    /* name */
          false,                 /* partial_inplace */
          0x00000000,            /* src_mask */
          0x000003f0,            /* dst_mask */
+         false),                /* pcrel_offset */
+/* -------- */
+  HOWTO (R_VOLT32_G12_SIMM22,   /* type */
+         0,                     /* rightshift */
+         3,                     /* size */
+         22,                    /* bitsize */
+         false,                 /* pc_relative */
+         4,                     /* bitpos */
+         complain_overflow_signed, /* complain_on_overflow */
+         volt32_reloc,          /* special_function */
+         "R_VOLT32_G12_SIMM22", /* name */
+         false,                 /* partial_inplace */
+         0x00000000,            /* src_mask */
+         0x003fffff,            /* dst_mask */
          false),                /* pcrel_offset */
 /* -------- */
 //  /* A 15 bit PC-relative relocation.  */
@@ -191,8 +207,7 @@ static const struct volt32_reloc_map volt32_reloc_map [] =
   { BFD_RELOC_VOLT32_G8_IIMM5,          R_VOLT32_G8_IIMM5 },
   { BFD_RELOC_VOLT32_G8_JIMM5,          R_VOLT32_G8_JIMM5 },
   { BFD_RELOC_VOLT32_G9_IMM6,           R_VOLT32_G9_IMM6 },
-  /* { BFD_RELOC_VOLT32_G10_SIMM15_PCREL,        R_VOLT32_G10_SIMM15_PCREL }, */
-  /* { BFD_RELOC_VOLT32_G11_SIMM13_PCREL,        R_VOLT32_G11_SIMM13_PCREL }, */
+  { BFD_RELOC_VOLT32_G12_SIMM22,        R_VOLT32_G12_SIMM22 },
 };
 
 static reloc_howto_type *

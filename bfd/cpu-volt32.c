@@ -26,13 +26,13 @@
 const bfd_arch_info_type bfd_volt32_arch =
 {
   32,				/* Bits in a word.  */
-  32,				/* Bits in an address.  */
+  /* 32 */ 64,				/* Bits in an address.  */
   8,				/* Bits in a byte.  */
   bfd_arch_volt32,		/* Architecture Number.  */
   bfd_mach_volt32,		/* Machine number.  */
   "volt32",			/* Arch name.  */
   "volt32",			/* Printable name.  */
-  2,				/* Section alignment power.  */
+  7,				/* Section alignment power.  (128 bytes per ILAR) */
   true,				/* The one and only.  */
   bfd_default_compatible,	/* `compatible` function */
   bfd_default_scan,		/* `scan` function */
