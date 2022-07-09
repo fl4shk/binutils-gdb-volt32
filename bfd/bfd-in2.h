@@ -2656,7 +2656,8 @@ to compensate for the borrow when the low bits are added.  */
   BFD_RELOC_VOLT32_G8_IIMM5,
   BFD_RELOC_VOLT32_G8_JIMM5,
   BFD_RELOC_VOLT32_G9_IMM6,
-  BFD_RELOC_VOLT32_G12_SIMM22,
+  BFD_RELOC_VOLT32_G12_SIMM21,
+  BFD_RELOC_VOLT32_G12_SIMM21_PCREL,
 
 
 /* FT32 ELF relocations.  */

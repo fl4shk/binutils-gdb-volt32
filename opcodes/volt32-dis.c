@@ -29,8 +29,8 @@
 #include "opcode/volt32.h"
 #include "disassemble.h"
 /* -------- */
-static fprintf_ftype fpr;
-static void *stream;
+//static fprintf_ftype fpr;
+//static void *stream;
 
 const char *volt32_dlar_names[VOLT32_NUM_DLARS] =
 {
@@ -44,7 +44,7 @@ const char *volt32_dlar_names[VOLT32_NUM_DLARS] =
   "d56", "d57", "d58", "dt0", "dt1", "dcp", "dfp", "dsp"
 };
 
-const char *volt32_dlar_names[VOLT32_NUM_ILARS] =
+const char *volt32_ilar_names[VOLT32_NUM_ILARS] =
 {
   "i0", "i1", "i2", "i3", "i4", "i5", "i6", "i7",
   "i8", "i9", "i10", "i11", "i12", "i13", "i14", "i15",

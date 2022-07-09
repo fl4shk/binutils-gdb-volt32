@@ -40,7 +40,7 @@ typedef struct volt32_lar_mode_pair_t
 
 typedef enum volt32_arg_form_t
 {
-  VOLT32_AF_BAD,                    /* bad instruction */
+  VOLT32_AF_BAD,                    /* <bad instruction> */
   VOLT32_AF_D1,                     /* dA */
   VOLT32_AF_D2,                     /* dA, dB */
   VOLT32_AF_D3,                     /* dA, dB, dC */
@@ -90,25 +90,40 @@ typedef enum volt32_arg_form_t
 
 
 /* For `strn...()` */
+#define VOLT32_INT_NULL ((int)-1)
+
 #define VOLT32_INSN_NAME_MAX_LEN 20
 #define VOLT32_REG_NAME_MAX_LEN 8
 
 /* Max pseudo-instruction sequence length */
 #define VOLT32_PS_INSN_MAX_LEN 2
 
-#define VOLT32_NULL ((int)-1)
+#define VOLT32_OI_NAMES_LEN 2
 
 typedef struct volt32_opc_info_t
 {
   int32_t opcode;
   volt32_lar_mode_pair_t lm_pair;
   volt32_arg_form_t arg_form;
-  const char *names[2];
+  const char *names[VOLT32_OI_NAMES_LEN];
 } volt32_opc_info_t;
 
 static inline bool volt32_oi_has_one_insn(const volt32_opc_info_t *opc_info)
 {
-  return (strlen(opc_info->names[1]) == 0);
+  //return (strlen(opc_info->names[1]) == 0);
+  return (opc_info->names[1][0] == '\0');
+}
+static inline int volt32_oi_name_cmp(const volt32_opc_info_t *opc_info,
+  const char *str)
+{
+  for (int i=0; i<VOLT32_OI_NAMES_LEN; ++i)
+  {
+    if (strncmp(opc_info->names[i], str, VOLT32_INSN_NAME_MAX_LEN) == 0)
+    {
+      return i;
+    }
+  }
+  return VOLT32_INT_NULL;
 }
 
 #define VOLT32_OI_G0_DIM 16
@@ -125,7 +140,7 @@ static inline bool volt32_oi_has_one_insn(const volt32_opc_info_t *opc_info)
 #define VOLT32_OI_G11_DIM 32
 #define VOLT32_OI_G12_DIM 2
 
-#define VOLT32_OI_PS_DIM 32
+#define VOLT32_OI_PS_DIM 80
 
 extern const volt32_opc_info_t
   volt32_g0_opc_info[VOLT32_OI_G0_DIM],
@@ -146,7 +161,7 @@ extern const volt32_opc_info_t
 
 #define VOLT32_NUM_OI_GRPS 13
 extern const volt32_opc_info_t
-  *volt32_raw_opc_info_arr[VOLT32_NUM_OI_GRPS];
+  **volt32_raw_opc_info_arr[VOLT32_NUM_OI_GRPS];
 
 #define VOLT32_NUM_DLARS 64
 #define VOLT32_NUM_ILARS 64
