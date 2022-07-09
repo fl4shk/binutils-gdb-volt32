@@ -145,19 +145,32 @@ static reloc_howto_type volt32_elf_howto_table [] =
          0x000003f0,            /* dst_mask */
          false),                /* pcrel_offset */
 /* -------- */
-  HOWTO (R_VOLT32_G12_SIMM22,   /* type */
+  HOWTO (R_VOLT32_G12_SIMM21,   /* type */
          0,                     /* rightshift */
          3,                     /* size */
-         22,                    /* bitsize */
+         21,                    /* bitsize */
          false,                 /* pc_relative */
-         4,                     /* bitpos */
+         1,                     /* bitpos */
          complain_overflow_signed, /* complain_on_overflow */
          volt32_reloc,          /* special_function */
-         "R_VOLT32_G12_SIMM22", /* name */
+         "R_VOLT32_G12_SIMM21", /* name */
          false,                 /* partial_inplace */
          0x00000000,            /* src_mask */
-         0x003fffff,            /* dst_mask */
+         0x003ffffe,            /* dst_mask */
          false),                /* pcrel_offset */
+  HOWTO (R_VOLT32_G12_SIMM21_PCREL,   /* type */
+         0,                     /* rightshift */
+         3,                     /* size */
+         21,                    /* bitsize */
+         true,                  /* pc_relative */
+         1,                     /* bitpos */
+         complain_overflow_signed, /* complain_on_overflow */
+         volt32_reloc,          /* special_function */
+         "R_VOLT32_G12_SIMM21_PCREL", /* name */
+         false,                 /* partial_inplace */
+         0x00000000,            /* src_mask */
+         0x003ffffe,            /* dst_mask */
+         true),                 /* pcrel_offset */
 /* -------- */
 //  /* A 15 bit PC-relative relocation.  */
 //  HOWTO (R_VOLT32_G10_SIMM15_PCREL,   /* type.  */
@@ -199,15 +212,16 @@ struct volt32_reloc_map
 
 static const struct volt32_reloc_map volt32_reloc_map [] =
 {
-  { BFD_RELOC_NONE,                     R_VOLT32_NONE },
-  { BFD_RELOC_32,                       R_VOLT32_32 },
-  { BFD_RELOC_VOLT32_G2_G3_G5_SIMM12,   R_VOLT32_G2_G3_G5_SIMM12 },
-  { BFD_RELOC_VOLT32_G7_ISIMM11,        R_VOLT32_G7_ISIMM11 },
-  { BFD_RELOC_VOLT32_G7_JIMM4,          R_VOLT32_G7_JIMM4 },
-  { BFD_RELOC_VOLT32_G8_IIMM5,          R_VOLT32_G8_IIMM5 },
-  { BFD_RELOC_VOLT32_G8_JIMM5,          R_VOLT32_G8_JIMM5 },
-  { BFD_RELOC_VOLT32_G9_IMM6,           R_VOLT32_G9_IMM6 },
-  { BFD_RELOC_VOLT32_G12_SIMM22,        R_VOLT32_G12_SIMM22 },
+  {BFD_RELOC_NONE,                       R_VOLT32_NONE},
+  {BFD_RELOC_32,                         R_VOLT32_32},
+  {BFD_RELOC_VOLT32_G2_G3_G5_SIMM12,     R_VOLT32_G2_G3_G5_SIMM12},
+  {BFD_RELOC_VOLT32_G7_ISIMM11,          R_VOLT32_G7_ISIMM11},
+  {BFD_RELOC_VOLT32_G7_JIMM4,            R_VOLT32_G7_JIMM4},
+  {BFD_RELOC_VOLT32_G8_IIMM5,            R_VOLT32_G8_IIMM5},
+  {BFD_RELOC_VOLT32_G8_JIMM5,            R_VOLT32_G8_JIMM5},
+  {BFD_RELOC_VOLT32_G9_IMM6,             R_VOLT32_G9_IMM6},
+  {BFD_RELOC_VOLT32_G12_SIMM21,          R_VOLT32_G12_SIMM21},
+  {BFD_RELOC_VOLT32_G12_SIMM21_PCREL,    R_VOLT32_G12_SIMM21_PCREL},
 };
 
 static reloc_howto_type *

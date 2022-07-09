@@ -41,7 +41,7 @@ const char *volt32_dlar_names[VOLT32_NUM_DLARS] =
   "d32", "d33", "d34", "d35", "d36", "d37", "d38", "d39",
   "d40", "d41", "d42", "d43", "d44", "d45", "d46", "d47",
   "d48", "d49", "d50", "d51", "d52", "d53", "d54", "d55",
-  "d56", "d57", "d58", "d59", "d60", "dcp", "dfp", "dsp"
+  "d56", "d57", "d58", "dt0", "dt1", "dcp", "dfp", "dsp"
 };
 
 const char *volt32_dlar_names[VOLT32_NUM_ILARS] =
