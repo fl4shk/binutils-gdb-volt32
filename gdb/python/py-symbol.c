@@ -1,6 +1,6 @@
 /* Python interface to symbols.
 
-   Copyright (C) 2008-2022 Free Software Foundation, Inc.
+   Copyright (C) 2008-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -18,6 +18,7 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.  */
 
 #include "defs.h"
+#include "top.h"		/* For force_quit ().  */
 #include "block.h"
 #include "frame.h"
 #include "symtab.h"
@@ -50,7 +51,26 @@ struct symbol_object {
       }							\
   } while (0)
 
-static const struct objfile_data *sympy_objfile_data_key;
+/* A deleter that is used when an objfile is about to be freed.  */
+struct symbol_object_deleter
+{
+  void operator() (symbol_object *obj)
+  {
+    while (obj)
+      {
+	symbol_object *next = obj->next;
+
+	obj->symbol = NULL;
+	obj->next = NULL;
+	obj->prev = NULL;
+
+	obj = next;
+      }
+  }
+};
+
+static const registry<objfile>::key<symbol_object, symbol_object_deleter>
+     sympy_objfile_data_key;
 
 static PyObject *
 sympy_str (PyObject *self)
@@ -246,9 +266,8 @@ static PyObject *
 sympy_value (PyObject *self, PyObject *args)
 {
   struct symbol *symbol = NULL;
-  struct frame_info *frame_info = NULL;
+  frame_info_ptr frame_info = NULL;
   PyObject *frame_obj = NULL;
-  struct value *value = NULL;
 
   if (!PyArg_ParseTuple (args, "|O", &frame_obj))
     return NULL;
@@ -266,6 +285,7 @@ sympy_value (PyObject *self, PyObject *args)
       return NULL;
     }
 
+  PyObject *result = nullptr;
   try
     {
       if (frame_obj != NULL)
@@ -282,14 +302,16 @@ sympy_value (PyObject *self, PyObject *args)
 	 was found, so we have no block to pass to read_var_value.  This will
 	 yield an incorrect value when symbol is not local to FRAME_INFO (this
 	 can happen with nested functions).  */
-      value = read_var_value (symbol, NULL, frame_info);
+      scoped_value_mark free_values;
+      struct value *value = read_var_value (symbol, NULL, frame_info);
+      result = value_to_value_object (value);
     }
   catch (const gdb_exception &except)
     {
       GDB_PY_HANDLE_EXCEPTION (except);
     }
 
-  return value_to_value_object (value);
+  return result;
 }
 
 /* Given a symbol, and a symbol_object that has previously been
@@ -307,11 +329,10 @@ set_symbol (symbol_object *obj, struct symbol *symbol)
     {
       struct objfile *objfile = symbol->objfile ();
 
-      obj->next = ((symbol_object *)
-		   objfile_data (objfile, sympy_objfile_data_key));
+      obj->next = sympy_objfile_data_key.get (objfile);
       if (obj->next)
 	obj->next->prev = obj;
-      set_objfile_data (objfile, sympy_objfile_data_key, obj);
+      sympy_objfile_data_key.set (objfile, obj);
     }
   else
     obj->next = NULL;
@@ -350,10 +371,7 @@ sympy_dealloc (PyObject *obj)
   else if (sym_obj->symbol != NULL
 	   && sym_obj->symbol->is_objfile_owned ()
 	   && sym_obj->symbol->symtab () != NULL)
-    {
-      set_objfile_data (sym_obj->symbol->objfile (),
-			sympy_objfile_data_key, sym_obj->next);
-    }
+    sympy_objfile_data_key.set (sym_obj->symbol->objfile (), sym_obj->next);
   if (sym_obj->next)
     sym_obj->next->prev = sym_obj->prev;
   sym_obj->symbol = NULL;
@@ -386,7 +404,7 @@ gdbpy_lookup_symbol (PyObject *self, PyObject *args, PyObject *kw)
     block = block_object_to_block (block_obj);
   else
     {
-      struct frame_info *selected_frame;
+      frame_info_ptr selected_frame;
 
       try
 	{
@@ -426,8 +444,7 @@ gdbpy_lookup_symbol (PyObject *self, PyObject *args, PyObject *kw)
     }
   PyTuple_SET_ITEM (ret_tuple.get (), 0, sym_obj);
 
-  bool_obj = (is_a_field_of_this.type != NULL) ? Py_True : Py_False;
-  Py_INCREF (bool_obj);
+  bool_obj = PyBool_FromLong (is_a_field_of_this.type != NULL);
   PyTuple_SET_ITEM (ret_tuple.get (), 1, bool_obj);
 
   return ret_tuple.release ();
@@ -497,9 +514,13 @@ gdbpy_lookup_static_symbol (PyObject *self, PyObject *args, PyObject *kw)
   const struct block *block = NULL;
   try
     {
-      struct frame_info *selected_frame
+      frame_info_ptr selected_frame
 	= get_selected_frame (_("No frame selected."));
       block = get_frame_block (selected_frame, NULL);
+    }
+  catch (const gdb_exception_forced_quit &e)
+    {
+      quit_force (NULL, 0);
     }
   catch (const gdb_exception &except)
     {
@@ -597,39 +618,7 @@ gdbpy_lookup_static_symbols (PyObject *self, PyObject *args, PyObject *kw)
   return return_list.release ();
 }
 
-/* This function is called when an objfile is about to be freed.
-   Invalidate the symbol as further actions on the symbol would result
-   in bad data.  All access to obj->symbol should be gated by
-   SYMPY_REQUIRE_VALID which will raise an exception on invalid
-   symbols.  */
-static void
-del_objfile_symbols (struct objfile *objfile, void *datum)
-{
-  symbol_object *obj = (symbol_object *) datum;
-  while (obj)
-    {
-      symbol_object *next = obj->next;
-
-      obj->symbol = NULL;
-      obj->next = NULL;
-      obj->prev = NULL;
-
-      obj = next;
-    }
-}
-
-void _initialize_py_symbol ();
-void
-_initialize_py_symbol ()
-{
-  /* Register an objfile "free" callback so we can properly
-     invalidate symbol when an object file that is about to be
-     deleted.  */
-  sympy_objfile_data_key
-    = register_objfile_data_with_cleanup (NULL, del_objfile_symbols);
-}
-
-int
+static int CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION
 gdbpy_initialize_symbols (void)
 {
   if (PyType_Ready (&symbol_object_type) < 0)
@@ -697,6 +686,8 @@ gdbpy_initialize_symbols (void)
   return gdb_pymodule_addobject (gdb_module, "Symbol",
 				 (PyObject *) &symbol_object_type);
 }
+
+GDBPY_INITIALIZE_FILE (gdbpy_initialize_symbols);
 
 
 

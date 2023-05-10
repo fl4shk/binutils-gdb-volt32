@@ -1,6 +1,6 @@
 /* Everything about catch/throw catchpoints, for GDB.
 
-   Copyright (C) 1986-2022 Free Software Foundation, Inc.
+   Copyright (C) 1986-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -94,13 +94,6 @@ struct exception_catchpoint : public code_breakpoint
   void check_status (struct bpstat *bs) override;
   struct bp_location *allocate_location () override;
 
-  /* FIXME this is temporary - until ordinary breakpoints have been
-     converted.  */
-  int resources_needed (const struct bp_location *) override
-  {
-    return 1;
-  }
-
   /* The kind of exception catchpoint.  */
 
   enum exception_event_kind kind;
@@ -133,7 +126,7 @@ is_exception_catchpoint (breakpoint *bp)
 static void
 fetch_probe_arguments (struct value **arg0, struct value **arg1)
 {
-  struct frame_info *frame = get_selected_frame (_("No frame selected"));
+  frame_info_ptr frame = get_selected_frame (_("No frame selected"));
   CORE_ADDR pc = get_frame_pc (frame);
   struct bound_probe pc_probe;
   unsigned n_args;
@@ -172,7 +165,7 @@ exception_catchpoint::check_status (struct bpstat *bs)
   std::string type_name;
 
   this->breakpoint::check_status (bs);
-  if (bs->stop == 0)
+  if (!bs->stop)
     return;
 
   if (self->pattern == NULL)
@@ -200,7 +193,7 @@ exception_catchpoint::check_status (struct bpstat *bs)
   if (name != nullptr)
     {
       if (self->pattern->exec (name, 0, NULL, 0) != 0)
-	bs->stop = 0;
+	bs->stop = false;
     }
 }
 
@@ -254,7 +247,7 @@ exception_catchpoint::print_it (const bpstat *bs) const
   bp_temp = disposition == disp_del;
   uiout->text (bp_temp ? "Temporary catchpoint "
 		       : "Catchpoint ");
-  uiout->field_signed ("bkptno", number);
+  print_num_locno (bs, uiout);
   uiout->text ((kind == EX_EVENT_THROW ? " (exception thrown), "
 		: (kind == EX_EVENT_CATCH ? " (exception caught), "
 		   : " (exception rethrown), ")));

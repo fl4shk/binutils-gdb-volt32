@@ -1,6 +1,6 @@
 /* Target-dependent code for the Xtensa port of GDB, the GNU debugger.
 
-   Copyright (C) 2003-2022 Free Software Foundation, Inc.
+   Copyright (C) 2003-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -167,7 +167,7 @@ struct ctype_cache
 
 /*  Xtensa-specific target dependencies.  */
 
-struct xtensa_gdbarch_tdep : gdbarch_tdep
+struct xtensa_gdbarch_tdep : gdbarch_tdep_base
 {
   xtensa_gdbarch_tdep (xtensa_register_t *regmap)
     : regmap (regmap)

@@ -1,5 +1,5 @@
 /* Internal interfaces for the Win32 specific target code for gdbserver.
-   Copyright (C) 2007-2022 Free Software Foundation, Inc.
+   Copyright (C) 2007-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -210,16 +210,5 @@ extern gdbserver_windows_process windows_process;
 
 /* Retrieve the context for this thread, if not already retrieved.  */
 extern void win32_require_context (windows_nat::windows_thread_info *th);
-
-/* Map the Windows error number in ERROR to a locale-dependent error
-   message string and return a pointer to it.  Typically, the values
-   for ERROR come from GetLastError.
-
-   The string pointed to shall not be modified by the application,
-   but may be overwritten by a subsequent call to strwinerror
-
-   The strwinerror function does not change the current setting
-   of GetLastError.  */
-extern char * strwinerror (DWORD error);
 
 #endif /* GDBSERVER_WIN32_LOW_H */

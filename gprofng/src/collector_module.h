@@ -1,4 +1,4 @@
-/* Copyright (C) 2021 Free Software Foundation, Inc.
+/* Copyright (C) 2021-2023 Free Software Foundation, Inc.
    Contributed by Oracle.
 
    This file is part of GNU Binutils.
@@ -25,6 +25,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <ucontext.h>
 #include <dirent.h>
 
 #include "gp-defs.h"
@@ -55,6 +56,7 @@ typedef struct CollectorUtilFuncs
   int (*fprintf)(FILE *stream, const char *format, ...);
   void (*free)(void *ptr);
   int (*fstat)(int fd, struct stat *buf);
+  int (*getcontext)(ucontext_t *ucp);
   int (*getcpuid)();
   char *(*getcwd)(char *buf, size_t size);
   char *(*getenv)(const char *name);
@@ -66,7 +68,7 @@ typedef struct CollectorUtilFuncs
   int (*mkdir)();
   time_t (*mktime)(struct tm *timeptr);
   void *(*mmap)(void *, size_t, int, int, int, off_t);
-  void *(*mmap64)();
+  void *(*mmap64_)();
   int (*munmap)();
   int (*open)(const char *, int, ...);
   int (*open_bare)(const char *, int, ...);
@@ -75,7 +77,7 @@ typedef struct CollectorUtilFuncs
   FILE *(*popen)(const char *command, const char *mode);
   int (*putenv)(char *string);
   ssize_t (*pwrite)();
-  ssize_t (*pwrite64)();
+  ssize_t (*pwrite64_)();
   ssize_t (*read)();
   int (*setenv)(const char *name, const char *value, int overwrite);
   int (*sigfillset)(sigset_t *set);
@@ -218,17 +220,6 @@ extern "C"
   CollectorModule __collector_register_module (ModuleInterface *modint);
 #ifdef __cplusplus
 }
-#endif
-
-#ifdef __has_attribute
-# if __has_attribute (__symver__)
-#  define SYMVER_ATTRIBUTE(sym, symver) \
-    __attribute__ ((__symver__ (#symver)))
-# endif
-#endif
-#ifndef SYMVER_ATTRIBUTE
-# define SYMVER_ATTRIBUTE(sym, symver) \
-  __asm__(".symver " #sym "," #symver);
 #endif
 
 #endif /* _COLLECTOR_MODULE_H */

@@ -1,5 +1,5 @@
 /* Internal interfaces for the Windows code
-   Copyright (C) 1995-2022 Free Software Foundation, Inc.
+   Copyright (C) 1995-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -95,8 +95,8 @@ windows_thread_info::suspend ()
 	 We can get Invalid Handle (6) if the main thread
 	 has exited.  */
       if (err != ERROR_INVALID_HANDLE && err != ERROR_ACCESS_DENIED)
-	warning (_("SuspendThread (tid=0x%x) failed. (winerr %u)"),
-		 (unsigned) tid, (unsigned) err);
+	warning (_("SuspendThread (tid=0x%x) failed. (winerr %u: %s)"),
+		 (unsigned) tid, (unsigned) err, strwinerror (err));
       suspended = -1;
     }
   else
@@ -113,8 +113,8 @@ windows_thread_info::resume ()
       if (ResumeThread (h) == (DWORD) -1)
 	{
 	  DWORD err = GetLastError ();
-	  warning (_("warning: ResumeThread (tid=0x%x) failed. (winerr %u)"),
-		   (unsigned) tid, (unsigned) err);
+	  warning (_("warning: ResumeThread (tid=0x%x) failed. (winerr %u: %s)"),
+		   (unsigned) tid, (unsigned) err, strwinerror (err));
 	}
     }
   suspended = 0;
@@ -204,8 +204,11 @@ windows_process_info::get_exec_module_filename (char *exe_name_ret,
     len = GetModuleFileNameEx (handle,
 			       dh_buf, pathbuf, exe_name_max_len);
     if (len == 0)
-      error (_("Error getting executable filename: %u."),
-	     (unsigned) GetLastError ());
+      {
+	unsigned err = (unsigned) GetLastError ();
+	error (_("Error getting executable filename (error %u): %s"),
+	       err, strwinerror (err));
+      }
     if (cygwin_conv_path (CCP_WIN_W_TO_POSIX, pathbuf, exe_name_ret,
 			  exe_name_max_len) < 0)
       error (_("Error converting executable filename to POSIX: %d."), errno);
@@ -214,8 +217,11 @@ windows_process_info::get_exec_module_filename (char *exe_name_ret,
   len = GetModuleFileNameEx (handle,
 			     dh_buf, exe_name_ret, exe_name_max_len);
   if (len == 0)
-    error (_("Error getting executable filename: %u."),
-	   (unsigned) GetLastError ());
+    {
+      unsigned err = (unsigned) GetLastError ();
+      error (_("Error getting executable filename (error %u): %s"),
+	     err, strwinerror (err));
+    }
 #endif
 
     return 1;	/* success */
@@ -794,6 +800,10 @@ create_process_wrapper (FUNC *do_create_process, const CHAR *image,
 	    gdb_lpproc_thread_attribute_list lpAttributeList;
 	  };
 
+#	  ifndef EXTENDED_STARTUPINFO_PRESENT
+#	   define EXTENDED_STARTUPINFO_PRESENT 0x00080000
+#	  endif
+
 	  gdb_extended_info info_ex {};
 
 	  if (startup_info != nullptr)
@@ -804,7 +814,7 @@ create_process_wrapper (FUNC *do_create_process, const CHAR *image,
 	     call always fails, by design.  */
 	  InitializeProcThreadAttributeList (nullptr, 1, 0, &size);
 	  info_ex.lpAttributeList
-	    = (PPROC_THREAD_ATTRIBUTE_LIST) alloca (size);
+	    = (gdb_lpproc_thread_attribute_list) alloca (size);
 	  InitializeProcThreadAttributeList (info_ex.lpAttributeList,
 					     1, 0, &size);
 
@@ -825,7 +835,7 @@ create_process_wrapper (FUNC *do_create_process, const CHAR *image,
 						| EXTENDED_STARTUPINFO_PRESENT),
 					       environment,
 					       cur_dir,
-					       (STARTUPINFO *) &info_ex,
+					       &info_ex.StartupInfo,
 					       process_info);
 	      if (result)
 		return_value = result;

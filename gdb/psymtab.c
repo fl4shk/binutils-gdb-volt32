@@ -1,6 +1,6 @@
 /* Partial symbol tables.
 
-   Copyright (C) 2009-2022 Free Software Foundation, Inc.
+   Copyright (C) 2009-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -102,8 +102,7 @@ find_pc_sect_psymtab_closer (struct objfile *objfile,
      many partial symbol tables containing the PC, but
      we want the partial symbol table that contains the
      function containing the PC.  */
-  if (!(objfile->flags & OBJF_REORDERED)
-      && section == NULL)  /* Can't validate section this way.  */
+  if (section == nullptr)
     return pst;
 
   if (msymbol.minsym == NULL)
@@ -553,8 +552,7 @@ psymbol_functions::find_last_source_symtab (struct objfile *ofp)
     {
       if (cs_pst->readin_p (ofp))
 	{
-	  internal_error (__FILE__, __LINE__,
-			  _("select_source_symtab: "
+	  internal_error (_("select_source_symtab: "
 			  "readin pst found and no symtabs."));
 	}
       else
@@ -677,7 +675,8 @@ print_partial_symbols (struct gdbarch *gdbarch, struct objfile *objfile,
 	  break;
 	}
       gdb_puts (", ", outfile);
-      gdb_puts (paddress (gdbarch, p->unrelocated_address ()), outfile);
+      gdb_puts (paddress (gdbarch, CORE_ADDR (p->unrelocated_address ())),
+		outfile);
       gdb_printf (outfile, "\n");
     }
 }
@@ -1104,75 +1103,6 @@ psymbol_functions::has_unexpanded_symtabs (struct objfile *objfile)
   return false;
 }
 
-/* Helper function for psym_find_compunit_symtab_by_address that fills
-   in m_psymbol_map for a given range of psymbols.  */
-
-void
-psymbol_functions::fill_psymbol_map
-     (struct objfile *objfile,
-      struct partial_symtab *psymtab,
-      std::set<CORE_ADDR> *seen_addrs,
-      const std::vector<partial_symbol *> &symbols)
-{
-  for (partial_symbol *psym : symbols)
-    {
-      if (psym->aclass == LOC_STATIC)
-	{
-	  CORE_ADDR addr = psym->address (objfile);
-	  if (seen_addrs->find (addr) == seen_addrs->end ())
-	    {
-	      seen_addrs->insert (addr);
-	      m_psymbol_map.emplace_back (addr, psymtab);
-	    }
-	}
-    }
-}
-
-/* See find_compunit_symtab_by_address in quick_symbol_functions, in
-   symfile.h.  */
-
-compunit_symtab *
-psymbol_functions::find_compunit_symtab_by_address (struct objfile *objfile,
-						    CORE_ADDR address)
-{
-  if (m_psymbol_map.empty ())
-    {
-      std::set<CORE_ADDR> seen_addrs;
-
-      for (partial_symtab *pst : partial_symbols (objfile))
-	{
-	  fill_psymbol_map (objfile, pst,
-			    &seen_addrs,
-			    pst->global_psymbols);
-	  fill_psymbol_map (objfile, pst,
-			    &seen_addrs,
-			    pst->static_psymbols);
-	}
-
-      m_psymbol_map.shrink_to_fit ();
-
-      std::sort (m_psymbol_map.begin (), m_psymbol_map.end (),
-		 [] (const std::pair<CORE_ADDR, partial_symtab *> &a,
-		     const std::pair<CORE_ADDR, partial_symtab *> &b)
-		 {
-		   return a.first < b.first;
-		 });
-    }
-
-  auto iter = std::lower_bound
-    (m_psymbol_map.begin (), m_psymbol_map.end (), address,
-     [] (const std::pair<CORE_ADDR, partial_symtab *> &a,
-	 CORE_ADDR b)
-     {
-       return a.first < b;
-     });
-
-  if (iter == m_psymbol_map.end () || iter->first != address)
-    return NULL;
-
-  return psymtab_to_symtab (objfile, iter->second);
-}
-
 
 
 /* Partially fill a partial symtab.  It will be completely filled at
@@ -1181,11 +1111,11 @@ psymbol_functions::find_compunit_symtab_by_address (struct objfile *objfile,
 partial_symtab::partial_symtab (const char *filename,
 				psymtab_storage *partial_symtabs,
 				objfile_per_bfd_storage *objfile_per_bfd,
-				CORE_ADDR textlow)
+				unrelocated_addr textlow)
   : partial_symtab (filename, partial_symtabs, objfile_per_bfd)
 {
   set_text_low (textlow);
-  set_text_high (raw_text_low ()); /* default */
+  set_text_high (unrelocated_text_low ()); /* default */
 }
 
 /* Perform "finishing up" operations of a partial symtab.  */
@@ -1283,7 +1213,7 @@ partial_symtab::add_psymbol (gdb::string_view name, bool copy_name,
 			     enum address_class theclass,
 			     short section,
 			     psymbol_placement where,
-			     CORE_ADDR coreaddr,
+			     unrelocated_addr coreaddr,
 			     enum language language,
 			     psymtab_storage *partial_symtabs,
 			     struct objfile *objfile)
@@ -1314,7 +1244,7 @@ partial_symtab::partial_symtab (const char *filename_,
 
   filename = objfile_per_bfd->intern (filename_);
 
-  if (symtab_create_debug)
+  if (symtab_create_debug >= 1)
     {
       /* Be a bit clever with debugging messages, and don't print objfile
 	 every time, only when it changes.  */
@@ -1325,13 +1255,13 @@ partial_symtab::partial_symtab (const char *filename_,
       if (last_bfd_name.empty () || last_bfd_name != this_bfd_name)
 	{
 	  last_bfd_name = this_bfd_name;
-	  gdb_printf (gdb_stdlog,
-		      "Creating one or more psymtabs for %s ...\n",
-		      this_bfd_name);
+
+	  symtab_create_debug_printf ("creating one or more psymtabs for %s",
+				      this_bfd_name);
 	}
-      gdb_printf (gdb_stdlog,
-		  "Created psymtab %s for module %s.\n",
-		  host_address_to_string (this), filename);
+
+      symtab_create_debug_printf ("created psymtab %s for module %s",
+				  host_address_to_string (this), filename);
     }
 }
 
@@ -1724,7 +1654,7 @@ maintenance_check_psymtabs (const char *ignore, int from_tty)
 		      gdb_printf (" psymtab\n");
 		    }
 		}
-	      if (ps->raw_text_high () != 0
+	      if (ps->unrelocated_text_high () != unrelocated_addr (0)
 		  && (ps->text_low (objfile) < b->start ()
 		      || ps->text_high (objfile) > b->end ()))
 		{

@@ -1,6 +1,6 @@
 /* gdb commands implemented in Python
 
-   Copyright (C) 2008-2022 Free Software Foundation, Inc.
+   Copyright (C) 2008-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -128,8 +128,7 @@ cmdpy_function (const char *args, int from_tty, cmd_list_element *command)
       error (_("Could not convert arguments to Python string."));
     }
 
-  gdbpy_ref<> ttyobj
-    = gdbpy_ref<>::new_reference (from_tty ? Py_True : Py_False);
+  gdbpy_ref<> ttyobj (PyBool_FromLong (from_tty));
   gdbpy_ref<> result (PyObject_CallMethodObjArgs ((PyObject *) obj, invoke_cst,
 						  argobj.get (), ttyobj.get (),
 						  NULL));
@@ -522,7 +521,7 @@ cmdpy_init (PyObject *self, PyObject *args, PyObject *kw)
 		       docstring.release (), cmd_list);
 
       /* If successful, the above takes ownership of the name, since we set
-         name_allocated, so release it.  */
+	 name_allocated, so release it.  */
       cmd_name.release ();
 
       /* There appears to be no API to set this.  */
@@ -552,7 +551,7 @@ cmdpy_init (PyObject *self, PyObject *args, PyObject *kw)
 
 /* Initialize the 'commands' code.  */
 
-int
+static int CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION
 gdbpy_initialize_commands (void)
 {
   int i;
@@ -601,6 +600,8 @@ gdbpy_initialize_commands (void)
 
   return 0;
 }
+
+GDBPY_INITIALIZE_FILE (gdbpy_initialize_commands);
 
 
 

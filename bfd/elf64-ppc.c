@@ -1,5 +1,5 @@
 /* PowerPC64-specific support for 64-bit ELF.
-   Copyright (C) 1999-2022 Free Software Foundation, Inc.
+   Copyright (C) 1999-2023 Free Software Foundation, Inc.
    Written by Linus Nordberg, Swox AB <info@swox.com>,
    based on elf32-ppc.c by Ian Lance Taylor.
    Largely rewritten by Alan Modra.
@@ -1996,7 +1996,8 @@ static const struct bfd_elf_special_section ppc64_elf_special_sections[] =
 enum _ppc64_sec_type {
   sec_normal = 0,
   sec_opd = 1,
-  sec_toc = 2
+  sec_toc = 2,
+  sec_stub = 3
 };
 
 struct _ppc64_elf_section_data
@@ -2026,6 +2027,9 @@ struct _ppc64_elf_section_data
       /* And the relocation addend.  */
       bfd_vma *add;
     } toc;
+
+    /* Stub debugging.  */
+    struct ppc_stub_hash_entry *last_ent;
   } u;
 
   enum _ppc64_sec_type sec_type:2;
@@ -2468,7 +2472,9 @@ ppc64_elf_get_synthetic_symtab (bfd *abfd,
       asection *dynamic, *glink = NULL, *relplt = NULL;
       arelent *p;
 
-      if (opd != NULL && !bfd_malloc_and_get_section (abfd, opd, &contents))
+      if (opd != NULL
+	  && ((opd->flags & SEC_HAS_CONTENTS) == 0
+	      || !bfd_malloc_and_get_section (abfd, opd, &contents)))
 	{
 	free_contents_and_exit_err:
 	  count = -1;
@@ -2503,15 +2509,16 @@ ppc64_elf_get_synthetic_symtab (bfd *abfd,
 	  size_t extdynsize;
 	  void (*swap_dyn_in) (bfd *, const void *, Elf_Internal_Dyn *);
 
-	  if (!bfd_malloc_and_get_section (abfd, dynamic, &dynbuf))
+	  if ((dynamic->flags & SEC_HAS_CONTENTS) == 0
+	      || !bfd_malloc_and_get_section (abfd, dynamic, &dynbuf))
 	    goto free_contents_and_exit_err;
 
 	  extdynsize = get_elf_backend_data (abfd)->s->sizeof_dyn;
 	  swap_dyn_in = get_elf_backend_data (abfd)->s->swap_dyn_in;
 
-	  extdyn = dynbuf;
-	  extdynend = extdyn + dynamic->size;
-	  for (; extdyn < extdynend; extdyn += extdynsize)
+	  for (extdyn = dynbuf, extdynend = dynbuf + dynamic->size;
+	       (size_t) (extdynend - extdyn) >= extdynsize;
+	       extdyn += extdynsize)
 	    {
 	      Elf_Internal_Dyn dyn;
 	      (*swap_dyn_in) (abfd, extdyn, &dyn);
@@ -2569,7 +2576,7 @@ ppc64_elf_get_synthetic_symtab (bfd *abfd,
 	      if (!(*slurp_relocs) (abfd, relplt, dyn_syms, true))
 		goto free_contents_and_exit_err;
 
-	      plt_count = relplt->size / sizeof (Elf64_External_Rela);
+	      plt_count = NUM_SHDR_ENTRIES (&elf_section_data (relplt)->this_hdr);
 	      size += plt_count * sizeof (asymbol);
 
 	      p = relplt->relocation;
@@ -3079,6 +3086,9 @@ struct ppc_stub_hash_entry
 
   /* Symbol st_other.  */
   unsigned char other;
+
+  /* Debug: Track hash table traversal.  */
+  unsigned int id;
 };
 
 struct ppc_branch_hash_entry
@@ -3317,6 +3327,9 @@ struct ppc_link_hash_table
   /* Whether any code linked seems to be Power10.  */
   unsigned int has_power10_relocs:1;
 
+  /* Incremented once for each stub sized.  */
+  unsigned int stub_id;
+
   /* Incremented every time we size stubs.  */
   unsigned int stub_iteration;
 
@@ -3397,7 +3410,9 @@ stub_hash_newfunc (struct bfd_hash_entry *entry,
       eh->target_section = NULL;
       eh->h = NULL;
       eh->plt_ent = NULL;
+      eh->symtype = 0;
       eh->other = 0;
+      eh->id = 0;
     }
 
   return entry;
@@ -3957,7 +3972,7 @@ ppc_merge_stub (struct ppc_link_hash_table *htab,
 
   old_type = stub_entry->type;
   if (old_type.main == ppc_stub_plt_branch)
-    old_type.main += ppc_stub_long_branch - ppc_stub_plt_branch;
+    old_type.main = ppc_stub_long_branch;
 
   if (old_type.main != stub_type.main
       || (old_type.sub != stub_type.sub
@@ -5524,7 +5539,8 @@ opd_entry_value (asection *opd_sec,
 
       if (contents == NULL)
 	{
-	  if (!bfd_malloc_and_get_section (opd_bfd, opd_sec, &contents))
+	  if ((opd_sec->flags & SEC_HAS_CONTENTS) == 0
+	      || !bfd_malloc_and_get_section (opd_bfd, opd_sec, &contents))
 	    return (bfd_vma) -1;
 	  ppc64_elf_tdata (opd_bfd)->opd.contents = contents;
 	}
@@ -7349,7 +7365,9 @@ ppc64_elf_edit_opd (struct bfd_link_info *info)
 	continue;
 
       sec = bfd_get_section_by_name (ibfd, ".opd");
-      if (sec == NULL || sec->size == 0)
+      if (sec == NULL
+	  || sec->size == 0
+	  || (sec->flags & SEC_HAS_CONTENTS) == 0)
 	continue;
 
       if (sec->sec_info_type == SEC_INFO_TYPE_JUST_SYMS)
@@ -8910,6 +8928,7 @@ ppc64_elf_edit_toc (struct bfd_link_info *info)
       toc = bfd_get_section_by_name (ibfd, ".toc");
       if (toc == NULL
 	  || toc->size == 0
+	  || (toc->flags & SEC_HAS_CONTENTS) == 0
 	  || toc->sec_info_type == SEC_INFO_TYPE_JUST_SYMS
 	  || discarded_section (toc))
 	continue;
@@ -9988,20 +10007,21 @@ allocate_dynrelocs (struct elf_link_hash_entry *h, void *inf)
 
       /* Finally, allocate space.  */
       for (p = (struct ppc_dyn_relocs *) h->dyn_relocs; p != NULL; p = p->next)
-	{
-	  unsigned int count;
-	  asection *sreloc = elf_section_data (p->sec)->sreloc;
-	  if (eh->elf.type == STT_GNU_IFUNC)
-	    sreloc = htab->elf.irelplt;
-	  count = p->count;
-	  if (info->enable_dt_relr
-	      && ((!NO_OPD_RELOCS
-		   && ppc64_elf_section_data (p->sec)->sec_type == sec_opd)
-		  || (eh->elf.type != STT_GNU_IFUNC
-		      && SYMBOL_REFERENCES_LOCAL (info, h))))
-	    count -= p->rel_count;
-	  sreloc->size += count * sizeof (Elf64_External_Rela);
-	}
+	if (!discarded_section (p->sec))
+	  {
+	    unsigned int count;
+	    asection *sreloc = elf_section_data (p->sec)->sreloc;
+	    if (eh->elf.type == STT_GNU_IFUNC)
+	      sreloc = htab->elf.irelplt;
+	    count = p->count;
+	    if (info->enable_dt_relr
+		&& ((!NO_OPD_RELOCS
+		     && ppc64_elf_section_data (p->sec)->sec_type == sec_opd)
+		    || (eh->elf.type != STT_GNU_IFUNC
+			&& SYMBOL_REFERENCES_LOCAL (info, h))))
+	      count -= p->rel_count;
+	    sreloc->size += count * sizeof (Elf64_External_Rela);
+	  }
     }
 
   /* We might need a PLT entry when the symbol
@@ -10236,8 +10256,7 @@ ppc64_elf_size_dynamic_sections (bfd *output_bfd,
 
 	  for (p = elf_section_data (s)->local_dynrel; p != NULL; p = p->next)
 	    {
-	      if (!bfd_is_abs_section (p->sec)
-		  && bfd_is_abs_section (p->sec->output_section))
+	      if (discarded_section (p->sec))
 		{
 		  /* Input section has been discarded, either because
 		     it is a copy of a linkonce section or due to
@@ -11171,29 +11190,22 @@ plt_stub_size (struct ppc_link_hash_table *htab,
    boundaries if we align, then return the padding needed to do so.  */
 
 static inline unsigned int
-plt_stub_pad (struct ppc_link_hash_table *htab,
-	      struct ppc_stub_hash_entry *stub_entry,
+plt_stub_pad (int plt_stub_align,
 	      bfd_vma stub_off,
-	      bfd_vma plt_off,
-	      unsigned int odd)
+	      unsigned int stub_size)
 {
-  int stub_align;
-  unsigned stub_size;
+  unsigned int stub_align;
 
-  if (htab->params->plt_stub_align >= 0)
+  if (plt_stub_align >= 0)
+    stub_align = 1u << plt_stub_align;
+  else
     {
-      stub_align = 1 << htab->params->plt_stub_align;
-      if ((stub_off & (stub_align - 1)) != 0)
-	return stub_align - (stub_off & (stub_align - 1));
-      return 0;
+      stub_align = 1u << -plt_stub_align;
+      if (((stub_off + stub_size - 1) & -stub_align) - (stub_off & -stub_align)
+	  <= ((stub_size - 1) & -stub_align))
+	return 0;
     }
-
-  stub_align = 1 << -htab->params->plt_stub_align;
-  stub_size = plt_stub_size (htab, stub_entry, plt_off, odd);
-  if (((stub_off + stub_size - 1) & -stub_align) - (stub_off & -stub_align)
-      > ((stub_size - 1) & -stub_align))
-    return stub_align - (stub_off & (stub_align - 1));
-  return 0;
+  return stub_align - 1 - ((stub_off - 1) & (stub_align - 1));
 }
 
 /* Build a toc using .plt call stub.  */
@@ -11636,6 +11648,45 @@ get_r2off (struct bfd_link_info *info,
   return r2off;
 }
 
+/* Debug dump.  */
+
+static void
+dump_stub (const char *header,
+	   struct ppc_stub_hash_entry *stub_entry,
+	   size_t end_offset)
+{
+  const char *t1, *t2, *t3;
+  switch (stub_entry->type.main)
+    {
+    case ppc_stub_none:		t1 = "none";		break;
+    case ppc_stub_long_branch:	t1 = "long_branch";	break;
+    case ppc_stub_plt_branch:	t1 = "plt_branch";	break;
+    case ppc_stub_plt_call:	t1 = "plt_call";	break;
+    case ppc_stub_global_entry:	t1 = "global_entry";	break;
+    case ppc_stub_save_res:	t1 = "save_res";	break;
+    default:			t1 = "???";		break;
+    }
+  switch (stub_entry->type.sub)
+    {
+    case ppc_stub_toc:		t2 = "toc";		break;
+    case ppc_stub_notoc:	t2 = "notoc";		break;
+    case ppc_stub_p9notoc:	t2 = "p9notoc";		break;
+    default:			t2 = "???";		break;
+    }
+  t3 = stub_entry->type.r2save ? "r2save" : "";
+  fprintf (stderr, "%s id = %u type = %s:%s:%s\n",
+	   header, stub_entry->id, t1, t2, t3);
+  fprintf (stderr, "name = %s\n", stub_entry->root.string);
+  fprintf (stderr, "offset = 0x%" PRIx64 ":", stub_entry->stub_offset);
+  for (size_t i = stub_entry->stub_offset; i < end_offset; i += 4)
+    {
+      asection *stub_sec = stub_entry->group->stub_sec;
+      uint32_t *p = (uint32_t *) (stub_sec->contents + i);
+      fprintf (stderr, " %08x", (uint32_t) bfd_get_32 (stub_sec->owner, p));
+    }
+  fprintf (stderr, "\n");
+}
+
 static bool
 ppc_build_one_stub (struct bfd_hash_entry *gen_entry, void *in_arg)
 {
@@ -11657,30 +11708,33 @@ ppc_build_one_stub (struct bfd_hash_entry *gen_entry, void *in_arg)
   stub_entry = (struct ppc_stub_hash_entry *) gen_entry;
   info = in_arg;
 
-  /* Fail if the target section could not be assigned to an output
-     section.  The user should fix his linker script.  */
-  if (stub_entry->target_section != NULL
-      && stub_entry->target_section->output_section == NULL
-      && info->non_contiguous_regions)
-    info->callbacks->einfo (_("%F%P: Could not assign '%pA' to an output section. "
-			      "Retry without --enable-non-contiguous-regions.\n"),
-			    stub_entry->target_section);
-
-  /* Same for the group.  */
-  if (stub_entry->group->stub_sec != NULL
-      && stub_entry->group->stub_sec->output_section == NULL
-      && info->non_contiguous_regions)
-    info->callbacks->einfo (_("%F%P: Could not assign group %pA target %pA to an "
-			      "output section. Retry without "
-			      "--enable-non-contiguous-regions.\n"),
-			    stub_entry->group->stub_sec,
-			    stub_entry->target_section);
-
   htab = ppc_hash_table (info);
   if (htab == NULL)
     return false;
 
-  BFD_ASSERT (stub_entry->stub_offset >= stub_entry->group->stub_sec->size);
+  struct _ppc64_elf_section_data *esd
+    = ppc64_elf_section_data (stub_entry->group->stub_sec);
+  ++htab->stub_id;
+  if (stub_entry->id != htab->stub_id
+      || (stub_entry->type.main != ppc_stub_save_res
+	  && stub_entry->stub_offset < stub_entry->group->stub_sec->size))
+    {
+      BFD_ASSERT (0);
+      if (stub_entry->id != htab->stub_id)
+	fprintf (stderr, "Expected id %u, got %u\n",
+		 htab->stub_id, stub_entry->id);
+      if (stub_entry->stub_offset < stub_entry->group->stub_sec->size)
+	fprintf (stderr, "Expected offset >= %" PRIx64 ", got %"
+		 PRIx64 "\n", stub_entry->group->stub_sec->size,
+		 stub_entry->stub_offset);
+      if (esd->sec_type == sec_stub)
+	dump_stub ("Previous:", esd->u.last_ent, stub_entry->stub_offset);
+      dump_stub ("Current:", stub_entry, 0);
+    }
+  if (esd->sec_type == sec_normal)
+    esd->sec_type = sec_stub;
+  if (esd->sec_type == sec_stub)
+    esd->u.last_ent = stub_entry;
   loc = stub_entry->group->stub_sec->contents + stub_entry->stub_offset;
 
   htab->stub_count[stub_entry->type.main - 1] += 1;
@@ -12172,7 +12226,7 @@ ppc_size_one_stub (struct bfd_hash_entry *gen_entry, void *in_arg)
   struct ppc_link_hash_table *htab;
   asection *plt;
   bfd_vma targ, off, r2off;
-  unsigned int size, extra, lr_used, delta, odd;
+  unsigned int size, pad, extra, lr_used, delta, odd;
   bfd_vma stub_offset;
 
   /* Massage our args to the form they really have.  */
@@ -12188,7 +12242,7 @@ ppc_size_one_stub (struct bfd_hash_entry *gen_entry, void *in_arg)
   if (stub_entry->target_section != NULL
       && stub_entry->target_section->output_section == NULL
       && info->non_contiguous_regions)
-    info->callbacks->einfo (_("%F%P: Could not assign %pA to an output section. "
+    info->callbacks->einfo (_("%F%P: Could not assign `%pA' to an output section. "
 			      "Retry without --enable-non-contiguous-regions.\n"),
 			    stub_entry->target_section);
 
@@ -12196,17 +12250,16 @@ ppc_size_one_stub (struct bfd_hash_entry *gen_entry, void *in_arg)
   if (stub_entry->group->stub_sec != NULL
       && stub_entry->group->stub_sec->output_section == NULL
       && info->non_contiguous_regions)
-    info->callbacks->einfo (_("%F%P: Could not assign group %pA target %pA to an "
-			      "output section. Retry without "
-			      "--enable-non-contiguous-regions.\n"),
-			    stub_entry->group->stub_sec,
-			    stub_entry->target_section);
+    info->callbacks->einfo (_("%F%P: Could not assign `%pA' to an output section. "
+			      "Retry without --enable-non-contiguous-regions.\n"),
+			    stub_entry->group->stub_sec);
 
   /* Make a note of the offset within the stubs for this entry.  */
   stub_offset = stub_entry->group->stub_sec->size;
   if (htab->stub_iteration > STUB_SHRINK_ITER
       && stub_entry->stub_offset > stub_offset)
     stub_offset = stub_entry->stub_offset;
+  stub_entry->id = ++htab->stub_id;
 
   if (stub_entry->h != NULL
       && stub_entry->h->save_res
@@ -12226,7 +12279,7 @@ ppc_size_one_stub (struct bfd_hash_entry *gen_entry, void *in_arg)
     {
       /* Reset the stub type from the plt branch variant in case we now
 	 can reach with a shorter stub.  */
-      stub_entry->type.main += ppc_stub_long_branch - ppc_stub_plt_branch;
+      stub_entry->type.main = ppc_stub_long_branch;
     }
 
   if (stub_entry->type.main == ppc_stub_long_branch
@@ -12308,7 +12361,7 @@ ppc_size_one_stub (struct bfd_hash_entry *gen_entry, void *in_arg)
 	      stub_entry->group->stub_sec->flags |= SEC_RELOC;
 	    }
 
-	  stub_entry->type.main += ppc_stub_plt_branch - ppc_stub_long_branch;
+	  stub_entry->type.main = ppc_stub_plt_branch;
 	  if (!stub_entry->type.r2save)
 	    {
 	      size = 12;
@@ -12326,6 +12379,8 @@ ppc_size_one_stub (struct bfd_hash_entry *gen_entry, void *in_arg)
 	      if (PPC_LO (r2off) != 0)
 		size += 4;
 	    }
+	  pad = plt_stub_pad (htab->params->plt_stub_align, stub_offset, size);
+	  stub_offset += pad;
 	}
       else if (info->emitrelocations)
 	{
@@ -12348,6 +12403,38 @@ ppc_size_one_stub (struct bfd_hash_entry *gen_entry, void *in_arg)
       odd = off & 4;
       off = targ - off;
 
+      if (stub_entry->type.sub == ppc_stub_notoc)
+	extra = size_power10_offset (off, odd);
+      else
+	extra = size_offset (off - 8);
+      /* Include branch insn plus those in the offset sequence.  */
+      size += 4 + extra;
+
+      /* If the branch can't reach, use a plt_branch.
+	 The branch insn is at the end, or "extra" bytes along.  So
+	 its offset will be "extra" bytes less that that already
+	 calculated.  */
+      if (off - extra + (1 << 25) >= (bfd_vma) (1 << 26))
+	{
+	  stub_entry->type.main = ppc_stub_plt_branch;
+	  size += 4;
+	  pad = plt_stub_pad (htab->params->plt_stub_align, stub_offset, size);
+	  if (pad != 0)
+	    {
+	      stub_offset += pad;
+	      off -= pad;
+	      odd ^= pad & 4;
+	      size -= extra;
+	      if (stub_entry->type.sub == ppc_stub_notoc)
+		extra = size_power10_offset (off, odd);
+	      else
+		extra = size_offset (off - 8);
+	      size += extra;
+	    }
+	}
+      else if (info->emitrelocations)
+	stub_entry->group->stub_sec->reloc_count +=1;
+
       if (info->emitrelocations)
 	{
 	  unsigned int num_rel;
@@ -12358,17 +12445,6 @@ ppc_size_one_stub (struct bfd_hash_entry *gen_entry, void *in_arg)
 	  stub_entry->group->stub_sec->reloc_count += num_rel;
 	  stub_entry->group->stub_sec->flags |= SEC_RELOC;
 	}
-
-      if (stub_entry->type.sub == ppc_stub_notoc)
-	extra = size_power10_offset (off, odd);
-      else
-	extra = size_offset (off - 8);
-      /* Include branch insn plus those in the offset sequence.  */
-      size += 4 + extra;
-      /* The branch insn is at the end, or "extra" bytes along.  So
-	 its offset will be "extra" bytes less that that already
-	 calculated.  */
-      off -= extra;
 
       if (stub_entry->type.sub != ppc_stub_notoc)
 	{
@@ -12384,15 +12460,6 @@ ppc_size_one_stub (struct bfd_hash_entry *gen_entry, void *in_arg)
 	  stub_entry->group->eh_size += eh_advance_size (delta) + 6;
 	  stub_entry->group->lr_restore = lr_used + 8;
 	}
-
-      /* If the branch can't reach, use a plt_branch.  */
-      if (off + (1 << 25) >= (bfd_vma) (1 << 26))
-	{
-	  stub_entry->type.main += ppc_stub_plt_branch - ppc_stub_long_branch;
-	  size += 4;
-	}
-      else if (info->emitrelocations)
-	stub_entry->group->stub_sec->reloc_count +=1;
     }
   else if (stub_entry->type.sub >= ppc_stub_notoc)
     {
@@ -12430,13 +12497,14 @@ ppc_size_one_stub (struct bfd_hash_entry *gen_entry, void *in_arg)
       odd = off & 4;
       off = targ - off;
 
-      if (htab->params->plt_stub_align != 0)
+      size = plt_stub_size (htab, stub_entry, off, odd);
+      pad = plt_stub_pad (htab->params->plt_stub_align, stub_offset, size);
+      if (pad != 0)
 	{
-	  unsigned pad = plt_stub_pad (htab, stub_entry, stub_offset, off, odd);
-
 	  stub_offset += pad;
 	  off -= pad;
 	  odd ^= pad & 4;
+	  size = plt_stub_size (htab, stub_entry, off, odd);
 	}
 
       if (info->emitrelocations)
@@ -12449,8 +12517,6 @@ ppc_size_one_stub (struct bfd_hash_entry *gen_entry, void *in_arg)
 	  stub_entry->group->stub_sec->reloc_count += num_rel;
 	  stub_entry->group->stub_sec->flags |= SEC_RELOC;
 	}
-
-      size = plt_stub_size (htab, stub_entry, off, odd);
 
       if (stub_entry->type.sub != ppc_stub_notoc)
 	{
@@ -12504,12 +12570,9 @@ ppc_size_one_stub (struct bfd_hash_entry *gen_entry, void *in_arg)
 	     + htab->sec_info[stub_entry->group->link_sec->id].toc_off);
       off = targ - off;
 
-      if (htab->params->plt_stub_align != 0)
-	{
-	  unsigned pad = plt_stub_pad (htab, stub_entry, stub_offset, off, 0);
-
-	  stub_offset += pad;
-	}
+      size = plt_stub_size (htab, stub_entry, off, 0);
+      pad = plt_stub_pad (htab->params->plt_stub_align, stub_offset, size);
+      stub_offset += pad;
 
       if (info->emitrelocations)
 	{
@@ -12521,8 +12584,6 @@ ppc_size_one_stub (struct bfd_hash_entry *gen_entry, void *in_arg)
 		   : 1));
 	  stub_entry->group->stub_sec->flags |= SEC_RELOC;
 	}
-
-      size = plt_stub_size (htab, stub_entry, off, 0);
 
       if (stub_entry->h != NULL
 	  && is_tls_get_addr (&stub_entry->h->elf, htab)
@@ -14163,6 +14224,7 @@ ppc64_elf_size_stubs (struct bfd_link_info *info)
 	}
 
       htab->stub_changed = false;
+      htab->stub_id = 0;
       bfd_hash_traverse (&htab->stub_hash_table, ppc_size_one_stub, info);
 
       for (group = htab->group; group != NULL; group = group->next)
@@ -15098,6 +15160,7 @@ ppc64_elf_build_stubs (struct bfd_link_info *info,
     }
 
   /* Build the stubs as directed by the stub hash table.  */
+  htab->stub_id = 0;
   bfd_hash_traverse (&htab->stub_hash_table, ppc_build_one_stub, info);
 
   for (group = htab->group; group != NULL; group = group->next)

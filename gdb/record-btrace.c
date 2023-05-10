@@ -1,6 +1,6 @@
 /* Branch trace support for GDB, the GNU debugger.
 
-   Copyright (C) 2013-2022 Free Software Foundation, Inc.
+   Copyright (C) 2013-2023 Free Software Foundation, Inc.
 
    Contributed by Intel Corp. <markus.t.metzger@intel.com>
 
@@ -44,6 +44,7 @@
 #include "cli/cli-style.h"
 #include "async-event.h"
 #include <forward_list>
+#include "objfiles.h"
 
 static const target_info record_btrace_target_info = {
   "record-btrace",
@@ -62,7 +63,7 @@ public:
   strata stratum () const override { return record_stratum; }
 
   void close () override;
-  void async (int) override;
+  void async (bool) override;
 
   void detach (inferior *inf, int from_tty) override
   { record_detach (this, inf, from_tty); }
@@ -456,7 +457,7 @@ record_btrace_target::close ()
 /* The async method of target record-btrace.  */
 
 void
-record_btrace_target::async (int enable)
+record_btrace_target::async (bool enable)
 {
   if (enable)
     mark_async_event_handler (record_btrace_async_inferior_event_handler);
@@ -548,7 +549,7 @@ record_btrace_print_conf (const struct btrace_config *conf)
       return;
     }
 
-  internal_error (__FILE__, __LINE__, _("Unknown branch trace format."));
+  internal_error (_("Unknown branch trace format."));
 }
 
 /* The info_record method of target record-btrace.  */
@@ -704,8 +705,8 @@ static struct btrace_line_range
 btrace_find_line_range (CORE_ADDR pc)
 {
   struct btrace_line_range range;
-  struct linetable_entry *lines;
-  struct linetable *ltable;
+  const linetable_entry *lines;
+  const linetable *ltable;
   struct symtab *symtab;
   int nlines, i;
 
@@ -722,6 +723,10 @@ btrace_find_line_range (CORE_ADDR pc)
   if (nlines <= 0)
     return btrace_mk_line_range (symtab, 0, 0);
 
+  struct objfile *objfile = symtab->compunit ()->objfile ();
+  unrelocated_addr unrel_pc
+    = unrelocated_addr (pc - objfile->text_section_offset ());
+
   range = btrace_mk_line_range (symtab, 0, 0);
   for (i = 0; i < nlines - 1; i++)
     {
@@ -733,8 +738,8 @@ btrace_find_line_range (CORE_ADDR pc)
 	 possibly adding more line numbers to the range.  At the time this
 	 change was made I was unsure how to test this so chose to go with
 	 maintaining the existing experience.  */
-      if ((lines[i].pc == pc) && (lines[i].line != 0)
-	  && (lines[i].is_stmt == 1))
+      if (lines[i].raw_pc () == unrel_pc && lines[i].line != 0
+	  && lines[i].is_stmt)
 	range = btrace_line_range_add (range, lines[i].line);
     }
 
@@ -1391,7 +1396,7 @@ enum record_method
 record_btrace_target::record_method (ptid_t ptid)
 {
   process_stratum_target *proc_target = current_inferior ()->process_target ();
-  thread_info *const tp = find_thread_ptid (proc_target, ptid);
+  thread_info *const tp = proc_target->find_thread (ptid);
 
   if (tp == NULL)
     error (_("No thread."));
@@ -1543,7 +1548,8 @@ record_btrace_target::fetch_registers (struct regcache *regcache, int regno)
   /* Thread-db may ask for a thread's registers before GDB knows about the
      thread.  We forward the request to the target beneath in this
      case.  */
-  thread_info *tp = find_thread_ptid (regcache->target (), regcache->ptid ());
+  thread_info *tp
+    = current_inferior ()->process_target ()->find_thread (regcache->ptid ());
   if (tp != nullptr)
     replay =  tp->btrace.replay;
 
@@ -1605,7 +1611,7 @@ struct btrace_frame_cache
   struct thread_info *tp;
 
   /* The frame info.  */
-  struct frame_info *frame;
+  frame_info *frame;
 
   /* The branch trace function segment.  */
   const struct btrace_function *bfun;
@@ -1642,13 +1648,13 @@ bfcache_eq (const void *arg1, const void *arg2)
 /* Create a new btrace frame cache.  */
 
 static struct btrace_frame_cache *
-bfcache_new (struct frame_info *frame)
+bfcache_new (frame_info_ptr frame)
 {
   struct btrace_frame_cache *cache;
   void **slot;
 
   cache = FRAME_OBSTACK_ZALLOC (struct btrace_frame_cache);
-  cache->frame = frame;
+  cache->frame = frame.get ();
 
   slot = htab_find_slot (bfcache, cache, INSERT);
   gdb_assert (*slot == NULL);
@@ -1660,13 +1666,13 @@ bfcache_new (struct frame_info *frame)
 /* Extract the branch trace function from a branch trace frame.  */
 
 static const struct btrace_function *
-btrace_get_frame_function (struct frame_info *frame)
+btrace_get_frame_function (frame_info_ptr frame)
 {
   const struct btrace_frame_cache *cache;
   struct btrace_frame_cache pattern;
   void **slot;
 
-  pattern.frame = frame;
+  pattern.frame = frame.get ();
 
   slot = htab_find_slot (bfcache, &pattern, NO_INSERT);
   if (slot == NULL)
@@ -1679,7 +1685,7 @@ btrace_get_frame_function (struct frame_info *frame)
 /* Implement stop_reason method for record_btrace_frame_unwind.  */
 
 static enum unwind_stop_reason
-record_btrace_frame_unwind_stop_reason (struct frame_info *this_frame,
+record_btrace_frame_unwind_stop_reason (frame_info_ptr this_frame,
 					void **this_cache)
 {
   const struct btrace_frame_cache *cache;
@@ -1698,7 +1704,7 @@ record_btrace_frame_unwind_stop_reason (struct frame_info *this_frame,
 /* Implement this_id method for record_btrace_frame_unwind.  */
 
 static void
-record_btrace_frame_this_id (struct frame_info *this_frame, void **this_cache,
+record_btrace_frame_this_id (frame_info_ptr this_frame, void **this_cache,
 			     struct frame_id *this_id)
 {
   const struct btrace_frame_cache *cache;
@@ -1728,7 +1734,7 @@ record_btrace_frame_this_id (struct frame_info *this_frame, void **this_cache,
 /* Implement prev_register method for record_btrace_frame_unwind.  */
 
 static struct value *
-record_btrace_frame_prev_register (struct frame_info *this_frame,
+record_btrace_frame_prev_register (frame_info_ptr this_frame,
 				   void **this_cache,
 				   int regnum)
 {
@@ -1774,13 +1780,13 @@ record_btrace_frame_prev_register (struct frame_info *this_frame,
 
 static int
 record_btrace_frame_sniffer (const struct frame_unwind *self,
-			     struct frame_info *this_frame,
+			     frame_info_ptr this_frame,
 			     void **this_cache)
 {
   const struct btrace_function *bfun;
   struct btrace_frame_cache *cache;
   struct thread_info *tp;
-  struct frame_info *next;
+  frame_info_ptr next;
 
   /* THIS_FRAME does not contain a reference to its thread.  */
   tp = inferior_thread ();
@@ -1829,13 +1835,13 @@ record_btrace_frame_sniffer (const struct frame_unwind *self,
 
 static int
 record_btrace_tailcall_frame_sniffer (const struct frame_unwind *self,
-				      struct frame_info *this_frame,
+				      frame_info_ptr this_frame,
 				      void **this_cache)
 {
   const struct btrace_function *bfun, *callee;
   struct btrace_frame_cache *cache;
   struct btrace_call_iterator it;
-  struct frame_info *next;
+  frame_info_ptr next;
   struct thread_info *tinfo;
 
   next = get_next_frame (this_frame);
@@ -1868,7 +1874,7 @@ record_btrace_tailcall_frame_sniffer (const struct frame_unwind *self,
 }
 
 static void
-record_btrace_frame_dealloc_cache (struct frame_info *self, void *this_cache)
+record_btrace_frame_dealloc_cache (frame_info *self, void *this_cache)
 {
   struct btrace_frame_cache *cache;
   void **slot;
@@ -2033,10 +2039,8 @@ record_btrace_start_replaying (struct thread_info *tp)
       frame_id = get_thread_current_frame_id (tp);
 
       /* Check if we need to update any stepping-related frame id's.  */
-      upd_step_frame_id = frame_id_eq (frame_id,
-				       tp->control.step_frame_id);
-      upd_step_stack_frame_id = frame_id_eq (frame_id,
-					     tp->control.step_stack_frame_id);
+      upd_step_frame_id = (frame_id == tp->control.step_frame_id);
+      upd_step_stack_frame_id = (frame_id == tp->control.step_stack_frame_id);
 
       /* We start replaying at the end of the branch trace.  This corresponds
 	 to the current instruction.  */
@@ -2187,7 +2191,7 @@ record_btrace_target::resume (ptid_t ptid, int step, enum gdb_signal signal)
   /* Async support.  */
   if (target_can_async_p ())
     {
-      target_async (1);
+      target_async (true);
       mark_async_event_handler (record_btrace_async_inferior_event_handler);
     }
 }
@@ -2441,7 +2445,7 @@ record_btrace_step_thread (struct thread_info *tp)
   switch (flags)
     {
     default:
-      internal_error (__FILE__, __LINE__, _("invalid stepping type."));
+      internal_error (_("invalid stepping type."));
 
     case BTHR_STOP:
       return btrace_step_stopped_on_request ();
@@ -2934,7 +2938,7 @@ cmd_record_btrace_start (const char *args, int from_tty)
     {
       execute_command ("target record-btrace", from_tty);
     }
-  catch (const gdb_exception &exception)
+  catch (const gdb_exception_error &exception)
     {
       record_btrace_conf.format = BTRACE_FORMAT_BTS;
 

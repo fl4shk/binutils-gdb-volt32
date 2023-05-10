@@ -1,6 +1,6 @@
 /* Cache and manage the values of registers for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2022 Free Software Foundation, Inc.
+   Copyright (C) 1986-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -29,6 +29,7 @@ struct gdbarch;
 struct address_space;
 class thread_info;
 struct process_stratum_target;
+struct inferior;
 
 extern struct regcache *get_current_regcache (void);
 extern struct regcache *get_thread_regcache (process_stratum_target *target,
@@ -40,7 +41,7 @@ extern struct regcache *get_thread_regcache (thread_info *thread);
 extern struct regcache *get_thread_arch_regcache
   (process_stratum_target *targ, ptid_t, struct gdbarch *);
 extern struct regcache *get_thread_arch_aspace_regcache
-  (process_stratum_target *target, ptid_t,
+  (inferior *inf_for_target_calls, ptid_t,
    struct gdbarch *, struct address_space *);
 
 extern enum register_status
@@ -375,12 +376,32 @@ public:
   void cooked_write_part (int regnum, int offset, int len,
 			  const gdb_byte *buf);
 
-  void supply_regset (const struct regset *regset,
+  /* Transfer a set of registers (as described by REGSET) between
+     REGCACHE and BUF.  If REGNUM == -1, transfer all registers
+     belonging to the regset, otherwise just the register numbered
+     REGNUM.  The REGSET's 'regmap' field must point to an array of
+     'struct regcache_map_entry'.  The valid register numbers in each
+     entry in 'struct regcache_map_entry' are offset by REGBASE.  */
+
+  void supply_regset (const struct regset *regset, int regbase,
 		      int regnum, const void *buf, size_t size);
 
+  void collect_regset (const struct regset *regset, int regbase, int regnum,
+		       void *buf, size_t size) const;
+
+  /* Same as the above, but with REGBASE == 0.  */
+
+  void supply_regset (const struct regset *regset,
+		      int regnum, const void *buf, size_t size)
+  {
+    supply_regset (regset, 0, regnum, buf, size);
+  }
 
   void collect_regset (const struct regset *regset, int regnum,
-		       void *buf, size_t size) const;
+		       void *buf, size_t size) const
+  {
+    collect_regset (regset, 0, regnum, buf, size);
+  }
 
   /* Return REGCACHE's ptid.  */
 
@@ -396,17 +417,12 @@ public:
     this->m_ptid = ptid;
   }
 
-  process_stratum_target *target () const
-  {
-    return m_target;
-  }
-
 /* Dump the contents of a register from the register cache to the target
    debug.  */
   void debug_print_register (const char *func, int regno);
 
 protected:
-  regcache (process_stratum_target *target, gdbarch *gdbarch,
+  regcache (inferior *inf_for_target_calls, gdbarch *gdbarch,
 	    const address_space *aspace);
 
 private:
@@ -419,7 +435,7 @@ private:
   /* Transfer a single or all registers belonging to a certain register
      set to or from a buffer.  This is the main worker function for
      regcache_supply_regset and regcache_collect_regset.  */
-  void transfer_regset (const struct regset *regset,
+  void transfer_regset (const struct regset *regset, int regbase,
 			struct regcache *out_regcache,
 			int regnum, const gdb_byte *in_buf,
 			gdb_byte *out_buf, size_t size) const;
@@ -433,13 +449,21 @@ private:
      makes sense, like PC or SP).  */
   const address_space * const m_aspace;
 
+  /* The inferior to switch to, to make target calls.
+
+     This may not be the inferior of thread M_PTID.  For instance, this
+     regcache might be for a fork child we are about to detach, so there will
+     never be an inferior for that thread / process.  Nevertheless, we need to
+     be able to switch to the target stack that can handle register reads /
+     writes for this regcache, and that's what this inferior is for.  */
+  inferior *m_inf_for_target_calls;
+
   /* If this is a read-write cache, which thread's registers is
      it connected to?  */
-  process_stratum_target *m_target;
   ptid_t m_ptid;
 
   friend struct regcache *
-  get_thread_arch_aspace_regcache (process_stratum_target *target, ptid_t ptid,
+  get_thread_arch_aspace_regcache (inferior *inf_for_target_calls, ptid_t ptid,
 				   struct gdbarch *gdbarch,
 				   struct address_space *aspace);
 };

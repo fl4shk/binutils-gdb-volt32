@@ -1,7 +1,7 @@
 /* Get info from stack frames; convert between frames, blocks,
    functions and pc values.
 
-   Copyright (C) 1986-2022 Free Software Foundation, Inc.
+   Copyright (C) 1986-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -52,7 +52,7 @@
    slot instruction.  */
 
 const struct block *
-get_frame_block (struct frame_info *frame, CORE_ADDR *addr_in_block)
+get_frame_block (frame_info_ptr frame, CORE_ADDR *addr_in_block)
 {
   CORE_ADDR pc;
   const struct block *bl;
@@ -72,7 +72,7 @@ get_frame_block (struct frame_info *frame, CORE_ADDR *addr_in_block)
 
   while (inline_count > 0)
     {
-      if (block_inlined_p (bl))
+      if (bl->inlined_p ())
 	inline_count--;
 
       bl = bl->superblock ();
@@ -91,7 +91,7 @@ get_pc_function_start (CORE_ADDR pc)
   bl = block_for_pc (pc);
   if (bl)
     {
-      struct symbol *symbol = block_linkage_function (bl);
+      struct symbol *symbol = bl->linkage_function ();
 
       if (symbol)
 	{
@@ -115,7 +115,7 @@ get_pc_function_start (CORE_ADDR pc)
 /* Return the symbol for the function executing in frame FRAME.  */
 
 struct symbol *
-get_frame_function (struct frame_info *frame)
+get_frame_function (frame_info_ptr frame)
 {
   const struct block *bl = get_frame_block (frame, 0);
 
@@ -139,7 +139,7 @@ find_pc_sect_function (CORE_ADDR pc, struct obj_section *section)
 
   if (b == 0)
     return 0;
-  return block_linkage_function (b);
+  return b->linkage_function ();
 }
 
 /* Return the function containing pc value PC.
@@ -162,7 +162,7 @@ find_pc_sect_containing_function (CORE_ADDR pc, struct obj_section *section)
   if (bl == nullptr)
     return nullptr;
 
-  return block_containing_function (bl);
+  return bl->containing_function ();
 }
 
 /* These variables are used to cache the most recent result of
@@ -410,8 +410,7 @@ find_function_entry_range_from_pc (CORE_ADDR pc, const char **name,
 
       /* It's an internal error if we exit the above loop without finding
 	 the range.  */
-      internal_error (__FILE__, __LINE__,
-		      _("Entry block not found in find_function_entry_range_from_pc"));
+      internal_error (_("Entry block not found in find_function_entry_range_from_pc"));
     }
 
   return status;
@@ -440,14 +439,14 @@ find_gnu_ifunc_target_type (CORE_ADDR resolver_funaddr)
     {
       /* Get the return type of the resolver.  */
       struct type *resolver_ret_type
-	= check_typedef (TYPE_TARGET_TYPE (resolver_type));
+	= check_typedef (resolver_type->target_type ());
 
       /* If we found a pointer to function, then the resolved type
 	 is the type of the pointed-to function.  */
       if (resolver_ret_type->code () == TYPE_CODE_PTR)
 	{
 	  struct type *resolved_type
-	    = TYPE_TARGET_TYPE (resolver_ret_type);
+	    = resolver_ret_type->target_type ();
 	  if (check_typedef (resolved_type)->code () == TYPE_CODE_FUNC)
 	    return resolved_type;
 	}
@@ -460,17 +459,17 @@ find_gnu_ifunc_target_type (CORE_ADDR resolver_funaddr)
    at least as old as the selected frame. Return NULL if there is no
    such frame.  If BLOCK is NULL, just return NULL.  */
 
-struct frame_info *
+frame_info_ptr
 block_innermost_frame (const struct block *block)
 {
   if (block == NULL)
     return NULL;
 
-  frame_info *frame = get_selected_frame ();
+  frame_info_ptr frame = get_selected_frame ();
   while (frame != NULL)
     {
       const struct block *frame_block = get_frame_block (frame, NULL);
-      if (frame_block != NULL && contained_in (frame_block, block))
+      if (frame_block != NULL && block->contains (frame_block))
 	return frame;
 
       frame = get_prev_frame (frame);

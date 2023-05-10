@@ -1,6 +1,6 @@
 /* Handle shared libraries for GDB, the GNU Debugger.
 
-   Copyright (C) 1990-2022 Free Software Foundation, Inc.
+   Copyright (C) 1990-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -53,50 +53,11 @@
 #include "debuginfod-support.h"
 #include "source.h"
 #include "cli/cli-style.h"
+#include "solib-target.h"
 
-/* Architecture-specific operations.  */
+/* See solib.h.  */
 
-/* Per-architecture data key.  */
-static struct gdbarch_data *solib_data;
-
-static void *
-solib_init (struct obstack *obstack)
-{
-  struct target_so_ops **ops;
-
-  ops = OBSTACK_ZALLOC (obstack, struct target_so_ops *);
-  *ops = current_target_so_ops;
-  return ops;
-}
-
-static const struct target_so_ops *
-solib_ops (struct gdbarch *gdbarch)
-{
-  const struct target_so_ops **ops
-    = (const struct target_so_ops **) gdbarch_data (gdbarch, solib_data);
-
-  return *ops;
-}
-
-/* Set the solib operations for GDBARCH to NEW_OPS.  */
-
-void
-set_solib_ops (struct gdbarch *gdbarch, const struct target_so_ops *new_ops)
-{
-  const struct target_so_ops **ops
-    = (const struct target_so_ops **) gdbarch_data (gdbarch, solib_data);
-
-  *ops = new_ops;
-}
-
-
-/* external data declarations */
-
-/* FIXME: gdbarch needs to control this variable, or else every
-   configuration needs to call set_solib_ops.  */
-struct target_so_ops *current_target_so_ops;
-
-/* Local function prototypes */
+bool debug_solib;
 
 /* If non-empty, this is a search path for loading non-absolute shared library
    symbol files.  This takes precedence over the environment variables PATH
@@ -156,7 +117,7 @@ show_solib_search_path (struct ui_file *file, int from_tty,
 static gdb::unique_xmalloc_ptr<char>
 solib_find_1 (const char *in_pathname, int *fd, bool is_solib)
 {
-  const struct target_so_ops *ops = solib_ops (target_gdbarch ());
+  const struct target_so_ops *ops = gdbarch_so_ops (target_gdbarch ());
   int found_file = -1;
   gdb::unique_xmalloc_ptr<char> temp_pathname;
   const char *fskind = effective_target_file_system_kind ();
@@ -529,7 +490,8 @@ typedef std::unordered_map<std::string, std::string> soname_build_id_map;
 
 /* Key used to associate a soname_build_id_map to a core file bfd.  */
 
-static const struct bfd_key<soname_build_id_map> cbfd_soname_build_id_data_key;
+static const struct registry<bfd>::key<soname_build_id_map>
+     cbfd_soname_build_id_data_key;
 
 /* See solib.h.  */
 
@@ -586,7 +548,7 @@ get_cbfd_soname_build_id (gdb_bfd_ref_ptr abfd, const char *soname)
 static int
 solib_map_sections (struct so_list *so)
 {
-  const struct target_so_ops *ops = solib_ops (target_gdbarch ());
+  const struct target_so_ops *ops = gdbarch_so_ops (target_gdbarch ());
 
   gdb::unique_xmalloc_ptr<char> filename (tilde_expand (so->so_name));
   gdb_bfd_ref_ptr abfd (ops->bfd_open (filename.get ()));
@@ -680,7 +642,7 @@ solib_map_sections (struct so_list *so)
 static void
 clear_so (struct so_list *so)
 {
-  const struct target_so_ops *ops = solib_ops (target_gdbarch ());
+  const struct target_so_ops *ops = gdbarch_so_ops (target_gdbarch ());
 
   delete so->sections;
   so->sections = NULL;
@@ -717,7 +679,7 @@ clear_so (struct so_list *so)
 void
 free_so (struct so_list *so)
 {
-  const struct target_so_ops *ops = solib_ops (target_gdbarch ());
+  const struct target_so_ops *ops = gdbarch_so_ops (target_gdbarch ());
 
   clear_so (so);
   ops->free_so (so);
@@ -763,7 +725,9 @@ solib_read_symbols (struct so_list *so, symfile_add_flags flags)
 	    {
 	      section_addr_info sap
 		= build_section_addr_info_from_section_table (*so->sections);
-	      so->objfile = symbol_file_add_from_bfd (so->abfd, so->so_name,
+	      gdb_bfd_ref_ptr tmp_bfd
+		(gdb_bfd_ref_ptr::new_reference (so->abfd));
+	      so->objfile = symbol_file_add_from_bfd (tmp_bfd, so->so_name,
 						      flags, &sap,
 						      OBJF_SHARED, NULL);
 	      so->objfile->addr_low = so->addr_low;
@@ -801,7 +765,7 @@ solib_used (const struct so_list *const known)
 void
 update_solib_list (int from_tty)
 {
-  const struct target_so_ops *ops = solib_ops (target_gdbarch ());
+  const struct target_so_ops *ops = gdbarch_so_ops (target_gdbarch ());
   struct so_list *inferior = ops->current_sos();
   struct so_list *gdb, **gdb_link;
 
@@ -821,7 +785,7 @@ update_solib_list (int from_tty)
 	    {
 	      ops->open_symbol_file_object (from_tty);
 	    }
-	  catch (const gdb_exception &ex)
+	  catch (const gdb_exception_error &ex)
 	    {
 	      exception_fprintf (gdb_stderr, ex,
 				 "Error reading attached "
@@ -995,7 +959,7 @@ bool
 libpthread_name_p (const char *name)
 {
   return (strstr (name, "/libpthread") != NULL
-          || strstr (name, "/libc.") != NULL );
+	  || strstr (name, "/libc.") != NULL );
 }
 
 /* Return non-zero if SO is the libpthread shared library.  */
@@ -1242,7 +1206,7 @@ solib_name_from_address (struct program_space *pspace, CORE_ADDR address)
 bool
 solib_keep_data_in_core (CORE_ADDR vaddr, unsigned long size)
 {
-  const struct target_so_ops *ops = solib_ops (target_gdbarch ());
+  const struct target_so_ops *ops = gdbarch_so_ops (target_gdbarch ());
 
   if (ops->keep_data_in_core)
     return ops->keep_data_in_core (vaddr, size) != 0;
@@ -1255,7 +1219,7 @@ solib_keep_data_in_core (CORE_ADDR vaddr, unsigned long size)
 void
 clear_solib (void)
 {
-  const struct target_so_ops *ops = solib_ops (target_gdbarch ());
+  const struct target_so_ops *ops = gdbarch_so_ops (target_gdbarch ());
 
   disable_breakpoints_in_shlibs ();
 
@@ -1280,7 +1244,7 @@ clear_solib (void)
 void
 solib_create_inferior_hook (int from_tty)
 {
-  const struct target_so_ops *ops = solib_ops (target_gdbarch ());
+  const struct target_so_ops *ops = gdbarch_so_ops (target_gdbarch ());
 
   ops->solib_create_inferior_hook (from_tty);
 }
@@ -1290,7 +1254,7 @@ solib_create_inferior_hook (int from_tty)
 bool
 in_solib_dynsym_resolve_code (CORE_ADDR pc)
 {
-  const struct target_so_ops *ops = solib_ops (target_gdbarch ());
+  const struct target_so_ops *ops = gdbarch_so_ops (target_gdbarch ());
 
   return ops->in_dynsym_resolve_code (pc) != 0;
 }
@@ -1326,7 +1290,7 @@ no_shared_libraries (const char *ignored, int from_tty)
 void
 update_solib_breakpoints (void)
 {
-  const struct target_so_ops *ops = solib_ops (target_gdbarch ());
+  const struct target_so_ops *ops = gdbarch_so_ops (target_gdbarch ());
 
   if (ops->update_breakpoints != NULL)
     ops->update_breakpoints ();
@@ -1337,7 +1301,7 @@ update_solib_breakpoints (void)
 void
 handle_solib_event (void)
 {
-  const struct target_so_ops *ops = solib_ops (target_gdbarch ());
+  const struct target_so_ops *ops = gdbarch_so_ops (target_gdbarch ());
 
   if (ops->handle_event != NULL)
     ops->handle_event ();
@@ -1425,7 +1389,7 @@ reload_shared_libraries (const char *ignored, int from_tty,
 
   reload_shared_libraries_1 (from_tty);
 
-  ops = solib_ops (target_gdbarch ());
+  ops = gdbarch_so_ops (target_gdbarch ());
 
   /* Creating inferior hooks here has two purposes.  First, if we reload 
      shared libraries then the address of solib breakpoint we've computed
@@ -1511,13 +1475,11 @@ show_auto_solib_add (struct ui_file *file, int from_tty,
 /* Lookup the value for a specific symbol from dynamic symbol table.  Look
    up symbol from ABFD.  MATCH_SYM is a callback function to determine
    whether to pick up a symbol.  DATA is the input of this callback
-   function.  Return NULL if symbol is not found.  */
+   function.  Return 0 if symbol is not found.  */
 
 CORE_ADDR
-gdb_bfd_lookup_symbol_from_symtab (bfd *abfd,
-				   int (*match_sym) (const asymbol *,
-						     const void *),
-				   const void *data)
+gdb_bfd_lookup_symbol_from_symtab
+     (bfd *abfd, gdb::function_view<bool (const asymbol *)> match_sym)
 {
   long storage_needed = bfd_get_symtab_upper_bound (abfd);
   CORE_ADDR symaddr = 0;
@@ -1535,7 +1497,7 @@ gdb_bfd_lookup_symbol_from_symtab (bfd *abfd,
 	{
 	  asymbol *sym  = *symbol_table++;
 
-	  if (match_sym (sym, data))
+	  if (match_sym (sym))
 	    {
 	      struct gdbarch *gdbarch = target_gdbarch ();
 	      symaddr = sym->value;
@@ -1553,7 +1515,7 @@ gdb_bfd_lookup_symbol_from_symtab (bfd *abfd,
 
 		  msym.set_value_address (symaddr);
 		  gdbarch_elf_make_msymbol_special (gdbarch, sym, &msym);
-		  symaddr = msym.value_raw_address ();
+		  symaddr = CORE_ADDR (msym.unrelocated_address ());
 		}
 
 	      /* BFD symbols are section relative.  */
@@ -1707,14 +1669,12 @@ gdb_bfd_read_elf_soname (const char *filename)
 
 /* Lookup the value for a specific symbol from symbol table.  Look up symbol
    from ABFD.  MATCH_SYM is a callback function to determine whether to pick
-   up a symbol.  DATA is the input of this callback function.  Return NULL
+   up a symbol.  DATA is the input of this callback function.  Return 0
    if symbol is not found.  */
 
 static CORE_ADDR
-bfd_lookup_symbol_from_dyn_symtab (bfd *abfd,
-				   int (*match_sym) (const asymbol *,
-						     const void *),
-				   const void *data)
+bfd_lookup_symbol_from_dyn_symtab
+     (bfd *abfd, gdb::function_view<bool (const asymbol *)> match_sym)
 {
   long storage_needed = bfd_get_dynamic_symtab_upper_bound (abfd);
   CORE_ADDR symaddr = 0;
@@ -1731,7 +1691,7 @@ bfd_lookup_symbol_from_dyn_symtab (bfd *abfd,
 	{
 	  asymbol *sym = *symbol_table++;
 
-	  if (match_sym (sym, data))
+	  if (match_sym (sym))
 	    {
 	      /* BFD symbols are section relative.  */
 	      symaddr = sym->value + sym->section->vma;
@@ -1745,20 +1705,19 @@ bfd_lookup_symbol_from_dyn_symtab (bfd *abfd,
 /* Lookup the value for a specific symbol from symbol table and dynamic
    symbol table.  Look up symbol from ABFD.  MATCH_SYM is a callback
    function to determine whether to pick up a symbol.  DATA is the
-   input of this callback function.  Return NULL if symbol is not
+   input of this callback function.  Return 0 if symbol is not
    found.  */
 
 CORE_ADDR
-gdb_bfd_lookup_symbol (bfd *abfd,
-		       int (*match_sym) (const asymbol *, const void *),
-		       const void *data)
+gdb_bfd_lookup_symbol
+     (bfd *abfd, gdb::function_view<bool (const asymbol *)> match_sym)
 {
-  CORE_ADDR symaddr = gdb_bfd_lookup_symbol_from_symtab (abfd, match_sym, data);
+  CORE_ADDR symaddr = gdb_bfd_lookup_symbol_from_symtab (abfd, match_sym);
 
   /* On FreeBSD, the dynamic linker is stripped by default.  So we'll
      have to check the dynamic string table too.  */
   if (symaddr == 0)
-    symaddr = bfd_lookup_symbol_from_dyn_symtab (abfd, match_sym, data);
+    symaddr = bfd_lookup_symbol_from_dyn_symtab (abfd, match_sym);
 
   return symaddr;
 }
@@ -1783,11 +1742,10 @@ void _initialize_solib ();
 void
 _initialize_solib ()
 {
-  solib_data = gdbarch_data_register_pre_init (solib_init);
-
   gdb::observers::free_objfile.attach (remove_user_added_objfile,
 				       "solib");
-  gdb::observers::inferior_execd.attach ([] (inferior *inf)
+  gdb::observers::inferior_execd.attach ([] (inferior *exec_inf,
+					     inferior *follow_inf)
     {
       solib_create_inferior_hook (0);
     }, "solib");
@@ -1842,4 +1800,12 @@ PATH and LD_LIBRARY_PATH."),
 				     reload_shared_libraries,
 				     show_solib_search_path,
 				     &setlist, &showlist);
+
+  add_setshow_boolean_cmd ("solib", class_maintenance,
+			   &debug_solib, _("\
+Set solib debugging."), _("\
+Show solib debugging."), _("\
+When true, solib-related debugging output is enabled."),
+			    nullptr, nullptr,
+			    &setdebuglist, &showdebuglist);
 }

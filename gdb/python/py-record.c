@@ -1,6 +1,6 @@
 /* Python interface to record targets.
 
-   Copyright 2016-2022 Free Software Foundation, Inc.
+   Copyright 2016-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -544,7 +544,7 @@ static gdb_PyGetSetDef recpy_gap_getset[] = {
 
 /* Sets up the record API in the gdb module.  */
 
-int
+static int CPYCHECKER_NEGATIVE_RESULT_SETS_EXCEPTION
 gdbpy_initialize_record (void)
 {
   recpy_record_type.tp_new = PyType_GenericNew;
@@ -563,7 +563,7 @@ gdbpy_initialize_record (void)
   recpy_insn_type.tp_getset = recpy_insn_getset;
   recpy_insn_type.tp_richcompare = recpy_element_richcompare;
   recpy_insn_type.tp_hash = recpy_element_hash;
-  recpy_insn_type.tp_base = &py_insn_type;
+  recpy_insn_type.tp_base = py_insn_get_insn_type ();
 
   recpy_func_type.tp_new = PyType_GenericNew;
   recpy_func_type.tp_flags = Py_TPFLAGS_DEFAULT;
@@ -648,3 +648,5 @@ gdbpy_stop_recording (PyObject *self, PyObject *args)
 
   Py_RETURN_NONE;
 }
+
+GDBPY_INITIALIZE_FILE (gdbpy_initialize_record);

@@ -15,7 +15,7 @@
 @SET_MAKE@
 
 #
-#   Copyright (C) 2021 Free Software Foundation, Inc.
+#   Copyright (C) 2021-2023 Free Software Foundation, Inc.
 #
 # This file is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -274,7 +274,7 @@ am__DIST_COMMON = $(srcdir)/Makefile.in $(top_srcdir)/../../ar-lib \
 	$(top_srcdir)/../../config.sub $(top_srcdir)/../../depcomp \
 	$(top_srcdir)/../../install-sh $(top_srcdir)/../../ltmain.sh \
 	$(top_srcdir)/../../missing $(top_srcdir)/../../mkinstalldirs \
-	$(top_srcdir)/../common/config.h.in ../../COPYING \
+	$(top_srcdir)/../common/lib-config.h.in ../../COPYING \
 	../../COPYING.LIB ../../ChangeLog ../../README ../../ar-lib \
 	../../compile ../../config.guess ../../config.rpath \
 	../../config.sub ../../depcomp ../../install-sh \
@@ -325,7 +325,6 @@ EGREP = @EGREP@
 EXEEXT = @EXEEXT@
 FGREP = @FGREP@
 GPROFNG_NO_NONNULL_COMPARE_CFLAGS = @GPROFNG_NO_NONNULL_COMPARE_CFLAGS@
-GPROFNG_VARIANT = @GPROFNG_VARIANT@
 GREP = @GREP@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
@@ -448,7 +447,7 @@ AM_CPPFLAGS = $(GPROFNG_CPPFLAGS) -I.. -I$(srcdir) \
 	-I$(srcdir)/../../include
 
 AM_LDFLAGS = -module -avoid-version \
-	-Wl,--version-script,$(srcdir)/mapfile.$(GPROFNG_VARIANT) \
+	-Wl,--version-script,$(srcdir)/libgprofng.ver \
 	$(LD_NO_AS_NEEDED) -Wl,-lrt -Wl,-ldl
 
 myincludedir = @includedir@
@@ -518,10 +517,10 @@ lib-config.h: stamp-h1
 	@test -f $@ || rm -f stamp-h1
 	@test -f $@ || $(MAKE) $(AM_MAKEFLAGS) stamp-h1
 
-stamp-h1: $(top_srcdir)/../common/config.h.in $(top_builddir)/config.status
+stamp-h1: $(top_srcdir)/../common/lib-config.h.in $(top_builddir)/config.status
 	@rm -f stamp-h1
 	cd $(top_builddir) && $(SHELL) ./config.status lib-config.h
-$(top_srcdir)/../common/config.h.in: @MAINTAINER_MODE_TRUE@ $(am__configure_deps) 
+$(top_srcdir)/../common/lib-config.h.in: @MAINTAINER_MODE_TRUE@ $(am__configure_deps) 
 	($(am__cd) $(top_srcdir) && $(AUTOHEADER))
 	rm -f stamp-h1
 	touch $@

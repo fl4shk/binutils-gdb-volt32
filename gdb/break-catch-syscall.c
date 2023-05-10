@@ -1,6 +1,6 @@
 /* Everything about syscall catchpoints, for GDB.
 
-   Copyright (C) 2009-2022 Free Software Foundation, Inc.
+   Copyright (C) 2009-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -79,7 +79,7 @@ struct catch_syscall_inferior_data
   int total_syscalls_count;
 };
 
-static const struct inferior_key<struct catch_syscall_inferior_data>
+static const registry<inferior>::key<catch_syscall_inferior_data>
   catch_syscall_inferior_data;
 
 static struct catch_syscall_inferior_data *
@@ -218,7 +218,7 @@ syscall_catchpoint::print_it (const bpstat *bs) const
 						: EXEC_ASYNC_SYSCALL_RETURN));
       uiout->field_string ("disp", bpdisp_text (b->disposition));
     }
-  uiout->field_signed ("bkptno", b->number);
+  print_num_locno (bs, uiout);
 
   if (last.kind () == TARGET_WAITKIND_SYSCALL_ENTRY)
     uiout->text (" (call to syscall ");

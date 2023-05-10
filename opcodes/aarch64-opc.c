@@ -1,5 +1,5 @@
 /* aarch64-opc.c -- AArch64 opcode support.
-   Copyright (C) 2009-2022 Free Software Foundation, Inc.
+   Copyright (C) 2009-2023 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of the GNU opcodes library.
@@ -97,6 +97,24 @@ const char *const aarch64_sve_prfop_array[16] = {
   "pstl3strm",
   0,
   0
+};
+
+/* The enumeration strings associated with each value of a 6-bit RPRFM
+   operation.  */
+const char *const aarch64_rprfmop_array[64] = {
+  "pldkeep",
+  "pstkeep",
+  0,
+  0,
+  "pldstrm",
+  "pststrm"
+};
+
+/* Vector length multiples for a predicate-as-counter operand.  Used in things
+   like AARCH64_OPND_SME_VLxN_10.  */
+const char *const aarch64_sme_vlxn_array[2] = {
+  "vlx2",
+  "vlx4"
 };
 
 /* Helper functions to determine which operand to be used to encode/decode
@@ -202,74 +220,53 @@ aarch64_select_operand_for_sizeq_field_coding (const aarch64_opcode *opcode)
 const aarch64_field fields[] =
 {
     {  0,  0 },	/* NIL.  */
-    {  0,  4 },	/* cond2: condition in truly conditional-executed inst.  */
-    {  0,  4 },	/* nzcv: flag bit specifier, encoded in the "nzcv" field.  */
-    {  5,  5 },	/* defgh: d:e:f:g:h bits in AdvSIMD modified immediate.  */
-    { 16,  3 },	/* abc: a:b:c bits in AdvSIMD modified immediate.  */
-    {  5, 19 },	/* imm19: e.g. in CBZ.  */
-    {  5, 19 },	/* immhi: e.g. in ADRP.  */
-    { 29,  2 },	/* immlo: e.g. in ADRP.  */
-    { 22,  2 },	/* size: in most AdvSIMD and floating-point instructions.  */
-    { 10,  2 },	/* vldst_size: size field in the AdvSIMD load/store inst.  */
-    { 29,  1 },	/* op: in AdvSIMD modified immediate instructions.  */
-    { 30,  1 },	/* Q: in most AdvSIMD instructions.  */
-    {  0,  5 },	/* Rt: in load/store instructions.  */
-    {  0,  5 },	/* Rd: in many integer instructions.  */
-    {  5,  5 },	/* Rn: in many integer instructions.  */
-    { 10,  5 },	/* Rt2: in load/store pair instructions.  */
-    { 10,  5 },	/* Ra: in fp instructions.  */
-    {  5,  3 },	/* op2: in the system instructions.  */
     {  8,  4 },	/* CRm: in the system instructions.  */
+    { 10,  2 }, /* CRm_dsb_nxs: 2-bit imm. encoded in CRm<3:2>.  */
     { 12,  4 },	/* CRn: in the system instructions.  */
-    { 16,  3 },	/* op1: in the system instructions.  */
-    { 19,  2 },	/* op0: in the system instructions.  */
-    { 10,  3 },	/* imm3: in add/sub extended reg instructions.  */
-    { 12,  4 },	/* cond: condition flags as a source operand.  */
-    { 12,  4 },	/* opcode: in advsimd load/store instructions.  */
-    { 12,  4 },	/* cmode: in advsimd modified immediate instructions.  */
-    { 13,  3 },	/* asisdlso_opcode: opcode in advsimd ld/st single element.  */
-    { 13,  2 },	/* len: in advsimd tbl/tbx instructions.  */
-    { 16,  5 },	/* Rm: in ld/st reg offset and some integer inst.  */
-    { 16,  5 },	/* Rs: in load/store exclusive instructions.  */
-    { 13,  3 },	/* option: in ld/st reg offset + add/sub extended reg inst.  */
-    { 12,  1 },	/* S: in load/store reg offset instructions.  */
-    { 21,  2 },	/* hw: in move wide constant instructions.  */
-    { 22,  2 },	/* opc: in load/store reg offset instructions.  */
-    { 23,  1 },	/* opc1: in load/store reg offset instructions.  */
-    { 22,  2 },	/* shift: in add/sub reg/imm shifted instructions.  */
-    { 22,  2 },	/* type: floating point type field in fp data inst.  */
-    { 30,  2 },	/* ldst_size: size field in ld/st reg offset inst.  */
-    { 10,  6 },	/* imm6: in add/sub reg shifted instructions.  */
-    { 15,  6 },	/* imm6_2: in rmif instructions.  */
-    { 11,  4 },	/* imm4: in advsimd ext and advsimd ins instructions.  */
-    {  0,  4 },	/* imm4_2: in rmif instructions.  */
-    { 10,  4 },	/* imm4_3: in adddg/subg instructions.  */
-    {  5,  4 }, /* imm4_5: in SME instructions.  */
-    { 16,  5 },	/* imm5: in conditional compare (immediate) instructions.  */
-    { 15,  7 },	/* imm7: in load/store pair pre/post index instructions.  */
-    { 13,  8 },	/* imm8: in floating-point scalar move immediate inst.  */
-    { 12,  9 },	/* imm9: in load/store pre/post index instructions.  */
-    { 10, 12 },	/* imm12: in ld/st unsigned imm or add/sub shifted inst.  */
-    {  5, 14 },	/* imm14: in test bit and branch instructions.  */
-    {  5, 16 },	/* imm16: in exception instructions.  */
-    {  0, 16 },	/* imm16_2: in udf instruction. */
-    {  0, 26 },	/* imm26: in unconditional branch instructions.  */
-    { 10,  6 },	/* imms: in bitfield and logical immediate instructions.  */
-    { 16,  6 },	/* immr: in bitfield and logical immediate instructions.  */
-    { 16,  3 },	/* immb: in advsimd shift by immediate instructions.  */
-    { 19,  4 },	/* immh: in advsimd shift by immediate instructions.  */
-    { 22,  1 },	/* S: in LDRAA and LDRAB instructions.  */
-    { 22,  1 },	/* N: in logical (immediate) instructions.  */
-    { 11,  1 },	/* index: in ld/st inst deciding the pre/post-index.  */
-    { 24,  1 },	/* index2: in ld/st pair inst deciding the pre/post-index.  */
-    { 31,  1 },	/* sf: in integer data processing instructions.  */
-    { 30,  1 },	/* lse_size: in LSE extension atomic instructions.  */
+    { 10,  8 }, /* CSSC_imm8.  */
     { 11,  1 },	/* H: in advsimd scalar x indexed element instructions.  */
     { 21,  1 },	/* L: in advsimd scalar x indexed element instructions.  */
     { 20,  1 },	/* M: in advsimd scalar x indexed element instructions.  */
-    { 31,  1 },	/* b5: in the test bit and branch instructions.  */
-    { 19,  5 },	/* b40: in the test bit and branch instructions.  */
-    { 10,  6 },	/* scale: in the fixed-point scalar to fp converting inst.  */
+    { 22,  1 },	/* N: in logical (immediate) instructions.  */
+    { 30,  1 },	/* Q: in most AdvSIMD instructions.  */
+    { 10,  5 },	/* Ra: in fp instructions.  */
+    {  0,  5 },	/* Rd: in many integer instructions.  */
+    { 16,  5 },	/* Rm: in ld/st reg offset and some integer inst.  */
+    {  5,  5 },	/* Rn: in many integer instructions.  */
+    { 16,  5 },	/* Rs: in load/store exclusive instructions.  */
+    {  0,  5 },	/* Rt: in load/store instructions.  */
+    { 10,  5 },	/* Rt2: in load/store pair instructions.  */
+    { 12,  1 },	/* S: in load/store reg offset instructions.  */
+    { 12,  2 }, /* SM3_imm2: Indexed element SM3 2 bits index immediate.  */
+    {  1,  3 }, /* SME_Pdx2: predicate register, multiple of 2, [3:1].  */
+    { 13,  3 }, /* SME_Pm: second source scalable predicate register P0-P7.  */
+    {  0,  3 }, /* SME_PNd3: PN0-PN7, bits [2:0].  */
+    {  5,  3 }, /* SME_PNn3: PN0-PN7, bits [7:5].  */
+    { 16,  1 }, /* SME_Q: Q class bit, bit 16.  */
+    { 16,  2 }, /* SME_Rm: index base register W12-W15 [17:16].  */
+    { 13,  2 }, /* SME_Rv: vector select register W12-W15, bits [14:13].  */
+    { 15,  1 }, /* SME_V: (horizontal / vertical tiles), bit 15.  */
+    { 10,  1 }, /* SME_VL_10: VLx2 or VLx4, bit [10].  */
+    { 13,  1 }, /* SME_VL_13: VLx2 or VLx4, bit [13].  */
+    {  0,  2 }, /* SME_ZAda_2b: tile ZA0-ZA3.  */
+    {  0,  3 }, /* SME_ZAda_3b: tile ZA0-ZA7.  */
+    {  1,  4 }, /* SME_Zdn2: Z0-Z31, multiple of 2, bits [4:1].  */
+    {  2,  3 }, /* SME_Zdn4: Z0-Z31, multiple of 4, bits [4:2].  */
+    { 16,  4 }, /* SME_Zm: Z0-Z15, bits [19:16].  */
+    { 17,  4 }, /* SME_Zm2: Z0-Z31, multiple of 2, bits [20:17].  */
+    { 18,  3 }, /* SME_Zm4: Z0-Z31, multiple of 4, bits [20:18].  */
+    {  6,  4 }, /* SME_Zn2: Z0-Z31, multiple of 2, bits [9:6].  */
+    {  7,  3 }, /* SME_Zn4: Z0-Z31, multiple of 4, bits [9:7].  */
+    {  4,  1 }, /* SME_ZtT: upper bit of Zt, bit [4].  */
+    {  0,  3 }, /* SME_Zt3: lower 3 bits of Zt, bits [2:0].  */
+    {  0,  2 }, /* SME_Zt2: lower 2 bits of Zt, bits [1:0].  */
+    { 23,  1 }, /* SME_i1: immediate field, bit 23.  */
+    { 12,  2 }, /* SME_size_12: bits [13:12].  */
+    { 22,  2 }, /* SME_size_22: size<1>, size<0> class field, [23:22].  */
+    { 23,  1 }, /* SME_sz_23: bit [23].  */
+    { 22,  1 }, /* SME_tszh: immediate and qualifier field, bit 22.  */
+    { 18,  3 }, /* SME_tszl: immediate and qualifier field, bits [20:18].  */
+    { 0,   8 }, /* SME_zero_mask: list of up to 8 tile names separated by commas [7:0].  */
     {  4,  1 }, /* SVE_M_4: Merge/zero select, bit 4.  */
     { 14,  1 }, /* SVE_M_14: Merge/zero select, bit 14.  */
     { 16,  1 }, /* SVE_M_16: Merge/zero select, bit 16.  */
@@ -295,10 +292,10 @@ const aarch64_field fields[] =
     {  5,  5 }, /* SVE_Zn: SVE vector register, bits [9,5].  */
     {  0,  5 }, /* SVE_Zt: SVE vector register, bits [4,0].  */
     {  5,  1 }, /* SVE_i1: single-bit immediate.  */
-    { 22,  1 }, /* SVE_i3h: high bit of 3-bit immediate.  */
-    { 11,  1 }, /* SVE_i3l: low bit of 3-bit immediate.  */
-    { 19,  2 }, /* SVE_i3h2: two high bits of 3bit immediate, bits [20,19].  */
     { 20,  1 }, /* SVE_i2h: high bit of 2bit immediate, bits.  */
+    { 22,  1 }, /* SVE_i3h: high bit of 3-bit immediate.  */
+    { 19,  2 }, /* SVE_i3h2: two high bits of 3bit immediate, bits [20,19].  */
+    { 11,  1 }, /* SVE_i3l: low bit of 3-bit immediate.  */
     { 16,  3 }, /* SVE_imm3: 3-bit immediate field.  */
     { 16,  4 }, /* SVE_imm4: 4-bit immediate field.  */
     {  5,  5 }, /* SVE_imm5: 5-bit immediate field.  */
@@ -315,8 +312,8 @@ const aarch64_field fields[] =
     { 16,  1 }, /* SVE_rot1: 1-bit rotation amount.  */
     { 10,  2 }, /* SVE_rot2: 2-bit rotation amount.  */
     { 10,  1 }, /* SVE_rot3: 1-bit rotation amount at bit 10.  */
-    { 22,  1 }, /* SVE_sz: 1-bit element size select.  */
     { 17,  2 }, /* SVE_size: 2-bit element size, bits [18,17].  */
+    { 22,  1 }, /* SVE_sz: 1-bit element size select.  */
     { 30,  1 }, /* SVE_sz2: 1-bit element size select.  */
     { 16,  4 }, /* SVE_tsz: triangular size select.  */
     { 22,  2 }, /* SVE_tszh: triangular size select high, bits [23,22].  */
@@ -324,24 +321,83 @@ const aarch64_field fields[] =
     { 19,  2 }, /* SVE_tszl_19: triangular size select low, bits [20,19].  */
     { 14,  1 }, /* SVE_xs_14: UXTW/SXTW select (bit 14).  */
     { 22,  1 }, /* SVE_xs_22: UXTW/SXTW select (bit 22).  */
-    {  0,  2 }, /* SME ZAda tile ZA0-ZA3.  */
-    {  0,  3 }, /* SME ZAda tile ZA0-ZA7.  */
-    { 22,  2 }, /* SME_size_10: size<1>, size<0> class field, [23:22].  */
-    { 16,  1 }, /* SME_Q: Q class bit, bit 16.  */
-    { 15,  1 }, /* SME_V: (horizontal / vertical tiles), bit 15.  */
-    { 13,  2 }, /* SME_Rv: vector select register W12-W15, bits [14:13].  */
-    { 13,  3 }, /* SME Pm second source scalable predicate register P0-P7.  */
-    { 0,   8 }, /* SME_zero_mask: list of up to 8 tile names separated by commas [7:0].  */
-    { 16,  2 }, /* SME_Rm: index base register W12-W15 [17:16].  */
-    { 23,  1 }, /* SME_i1: immediate field, bit 23.  */
-    { 22,  1 }, /* SME_tszh: immediate and qualifier field, bit 22.  */
-    { 18,  3 }, /* SME_tshl: immediate and qualifier field, bits [20:18].  */
+    { 22,  1 },	/* S_imm10: in LDRAA and LDRAB instructions.  */
+    { 16,  3 },	/* abc: a:b:c bits in AdvSIMD modified immediate.  */
+    { 13,  3 },	/* asisdlso_opcode: opcode in advsimd ld/st single element.  */
+    { 19,  5 },	/* b40: in the test bit and branch instructions.  */
+    { 31,  1 },	/* b5: in the test bit and branch instructions.  */
+    { 12,  4 },	/* cmode: in advsimd modified immediate instructions.  */
+    { 12,  4 },	/* cond: condition flags as a source operand.  */
+    {  0,  4 },	/* cond2: condition in truly conditional-executed inst.  */
+    {  5,  5 },	/* defgh: d:e:f:g:h bits in AdvSIMD modified immediate.  */
+    { 21,  2 },	/* hw: in move wide constant instructions.  */
+    {  0,  1 },	/* imm1_0: general immediate in bits [0].  */
+    {  2,  1 },	/* imm1_2: general immediate in bits [2].  */
+    {  8,  1 },	/* imm1_8: general immediate in bits [8].  */
+    { 10,  1 },	/* imm1_10: general immediate in bits [10].  */
+    { 15,  1 },	/* imm1_15: general immediate in bits [15].  */
+    { 16,  1 },	/* imm1_16: general immediate in bits [16].  */
+    {  0,  2 },	/* imm2_0: general immediate in bits [1:0].  */
+    {  1,  2 },	/* imm2_1: general immediate in bits [2:1].  */
+    {  8,  2 },	/* imm2_8: general immediate in bits [9:8].  */
+    { 10,  2 }, /* imm2_10: 2-bit immediate, bits [11:10] */
+    { 12,  2 }, /* imm2_12: 2-bit immediate, bits [13:12] */
+    { 15,  2 }, /* imm2_15: 2-bit immediate, bits [16:15] */
+    { 16,  2 }, /* imm2_16: 2-bit immediate, bits [17:16] */
+    { 19,  2 }, /* imm2_19: 2-bit immediate, bits [20:19] */
+    {  0,  3 },	/* imm3_0: general immediate in bits [2:0].  */
+    {  5,  3 },	/* imm3_5: general immediate in bits [7:5].  */
+    { 10,  3 },	/* imm3_10: in add/sub extended reg instructions.  */
+    { 12,  3 },	/* imm3_12: general immediate in bits [14:12].  */
+    { 14,  3 },	/* imm3_14: general immediate in bits [16:14].  */
+    { 15,  3 },	/* imm3_15: general immediate in bits [17:15].  */
+    {  0,  4 },	/* imm4_0: in rmif instructions.  */
+    {  5,  4 }, /* imm4_5: in SME instructions.  */
+    { 10,  4 },	/* imm4_10: in adddg/subg instructions.  */
+    { 11,  4 },	/* imm4_11: in advsimd ext and advsimd ins instructions.  */
+    { 14,  4 },	/* imm4_14: general immediate in bits [17:14].  */
+    { 16,  5 },	/* imm5: in conditional compare (immediate) instructions.  */
+    { 10,  6 },	/* imm6_10: in add/sub reg shifted instructions.  */
+    { 15,  6 },	/* imm6_15: in rmif instructions.  */
+    { 15,  7 },	/* imm7: in load/store pair pre/post index instructions.  */
+    { 13,  8 },	/* imm8: in floating-point scalar move immediate inst.  */
+    { 12,  9 },	/* imm9: in load/store pre/post index instructions.  */
+    { 10, 12 },	/* imm12: in ld/st unsigned imm or add/sub shifted inst.  */
+    {  5, 14 },	/* imm14: in test bit and branch instructions.  */
+    {  0, 16 },	/* imm16_0: in udf instruction. */
+    {  5, 16 },	/* imm16_5: in exception instructions.  */
+    {  5, 19 },	/* imm19: e.g. in CBZ.  */
+    {  0, 26 },	/* imm26: in unconditional branch instructions.  */
+    { 16,  3 },	/* immb: in advsimd shift by immediate instructions.  */
+    { 19,  4 },	/* immh: in advsimd shift by immediate instructions.  */
+    {  5, 19 },	/* immhi: e.g. in ADRP.  */
+    { 29,  2 },	/* immlo: e.g. in ADRP.  */
+    { 16,  6 },	/* immr: in bitfield and logical immediate instructions.  */
+    { 10,  6 },	/* imms: in bitfield and logical immediate instructions.  */
+    { 11,  1 },	/* index: in ld/st inst deciding the pre/post-index.  */
+    { 24,  1 },	/* index2: in ld/st pair inst deciding the pre/post-index.  */
+    { 30,  2 },	/* ldst_size: size field in ld/st reg offset inst.  */
+    { 13,  2 },	/* len: in advsimd tbl/tbx instructions.  */
+    { 30,  1 },	/* lse_sz: in LSE extension atomic instructions.  */
+    {  0,  4 },	/* nzcv: flag bit specifier, encoded in the "nzcv" field.  */
+    { 29,  1 },	/* op: in AdvSIMD modified immediate instructions.  */
+    { 19,  2 },	/* op0: in the system instructions.  */
+    { 16,  3 },	/* op1: in the system instructions.  */
+    {  5,  3 },	/* op2: in the system instructions.  */
+    { 22,  2 },	/* opc: in load/store reg offset instructions.  */
+    { 23,  1 },	/* opc1: in load/store reg offset instructions.  */
+    { 12,  4 },	/* opcode: in advsimd load/store instructions.  */
+    { 13,  3 },	/* option: in ld/st reg offset + add/sub extended reg inst.  */
     { 11,  2 }, /* rotate1: FCMLA immediate rotate.  */
     { 13,  2 }, /* rotate2: Indexed element FCMLA immediate rotate.  */
     { 12,  1 }, /* rotate3: FCADD immediate rotate.  */
-    { 12,  2 }, /* SM3: Indexed element SM3 2 bits index immediate.  */
+    { 10,  6 },	/* scale: in the fixed-point scalar to fp converting inst.  */
+    { 31,  1 },	/* sf: in integer data processing instructions.  */
+    { 22,  2 },	/* shift: in add/sub reg/imm shifted instructions.  */
+    { 22,  2 },	/* size: in most AdvSIMD and floating-point instructions.  */
     { 22,  1 }, /* sz: 1-bit element size select.  */
-    { 10,  2 }, /* CRm_dsb_nxs: 2-bit imm. encoded in CRm<3:2>.  */
+    { 22,  2 },	/* type: floating point type field in fp data inst.  */
+    { 10,  2 },	/* vldst_size: size field in the AdvSIMD load/store inst.  */
 };
 
 enum aarch64_operand_class
@@ -905,6 +961,9 @@ aarch64_num_of_operands (const aarch64_opcode *opcode)
 /* Find the best matched qualifier sequence in *QUALIFIERS_LIST for INST.
    If succeeds, fill the found sequence in *RET, return 1; otherwise return 0.
 
+   Store the smallest number of non-matching qualifiers in *INVALID_COUNT.
+   This is always 0 if the function succeeds.
+
    N.B. on the entry, it is very likely that only some operands in *INST
    have had their qualifiers been established.
 
@@ -927,16 +986,17 @@ aarch64_num_of_operands (const aarch64_opcode *opcode)
 int
 aarch64_find_best_match (const aarch64_inst *inst,
 			 const aarch64_opnd_qualifier_seq_t *qualifiers_list,
-			 int stop_at, aarch64_opnd_qualifier_t *ret)
+			 int stop_at, aarch64_opnd_qualifier_t *ret,
+			 int *invalid_count)
 {
-  int found = 0;
-  int i, num_opnds;
+  int i, num_opnds, invalid, min_invalid;
   const aarch64_opnd_qualifier_t *qualifiers;
 
   num_opnds = aarch64_num_of_operands (inst->opcode);
   if (num_opnds == 0)
     {
       DEBUG_TRACE ("SUCCEED: no operand");
+      *invalid_count = 0;
       return 1;
     }
 
@@ -944,13 +1004,14 @@ aarch64_find_best_match (const aarch64_inst *inst,
     stop_at = num_opnds - 1;
 
   /* For each pattern.  */
+  min_invalid = num_opnds;
   for (i = 0; i < AARCH64_MAX_QLF_SEQ_NUM; ++i, ++qualifiers_list)
     {
       int j;
       qualifiers = *qualifiers_list;
 
       /* Start as positive.  */
-      found = 1;
+      invalid = 0;
 
       DEBUG_TRACE ("%d", i);
 #ifdef DEBUG_AARCH64
@@ -958,19 +1019,16 @@ aarch64_find_best_match (const aarch64_inst *inst,
 	dump_match_qualifiers (inst->operands, qualifiers);
 #endif
 
-      /* Most opcodes has much fewer patterns in the list.
-	 First NIL qualifier indicates the end in the list.   */
-      if (empty_qualifier_sequence_p (qualifiers))
-	{
-	  DEBUG_TRACE_IF (i == 0, "SUCCEED: empty qualifier list");
-	  if (i)
-	    found = 0;
-	  break;
-	}
+      /* The first entry should be taken literally, even if it's an empty
+	 qualifier sequence.  (This matters for strict testing.)  In other
+	 positions an empty sequence acts as a terminator.  */
+      if (i > 0 && empty_qualifier_sequence_p (qualifiers))
+	break;
 
       for (j = 0; j < num_opnds && j <= stop_at; ++j, ++qualifiers)
 	{
-	  if (inst->operands[j].qualifier == AARCH64_OPND_QLF_NIL)
+	  if (inst->operands[j].qualifier == AARCH64_OPND_QLF_NIL
+	      && !(inst->opcode->flags & F_STRICT))
 	    {
 	      /* Either the operand does not have qualifier, or the qualifier
 		 for the operand needs to be deduced from the qualifier
@@ -988,21 +1046,22 @@ aarch64_find_best_match (const aarch64_inst *inst,
 	      if (operand_also_qualified_p (inst->operands + j, *qualifiers))
 		continue;
 	      else
-		{
-		  found = 0;
-		  break;
-		}
+		invalid += 1;
 	    }
 	  else
 	    continue;	/* Equal qualifiers are certainly matched.  */
 	}
 
+      if (min_invalid > invalid)
+	min_invalid = invalid;
+
       /* Qualifiers established.  */
-      if (found == 1)
+      if (min_invalid == 0)
 	break;
     }
 
-  if (found == 1)
+  *invalid_count = min_invalid;
+  if (min_invalid == 0)
     {
       /* Fill the result in *RET.  */
       int j;
@@ -1032,29 +1091,24 @@ aarch64_find_best_match (const aarch64_inst *inst,
    Return 1 if the operand qualifier(s) in *INST match one of the qualifier
    sequences in INST->OPCODE->qualifiers_list; otherwise return 0.
 
+   Store the smallest number of non-matching qualifiers in *INVALID_COUNT.
+   This is always 0 if the function succeeds.
+
    if UPDATE_P, update the qualifier(s) in *INST after the matching
    succeeds.  */
 
 static int
-match_operands_qualifier (aarch64_inst *inst, bool update_p)
+match_operands_qualifier (aarch64_inst *inst, bool update_p,
+			  int *invalid_count)
 {
-  int i, nops;
+  int i;
   aarch64_opnd_qualifier_seq_t qualifiers;
 
   if (!aarch64_find_best_match (inst, inst->opcode->qualifiers_list, -1,
-			       qualifiers))
+				qualifiers, invalid_count))
     {
       DEBUG_TRACE ("matching FAIL");
       return 0;
-    }
-
-  if (inst->opcode->flags & F_STRICT)
-    {
-      /* Require an exact qualifier match, even for NIL qualifiers.  */
-      nops = aarch64_num_of_operands (inst->opcode);
-      for (i = 0; i < nops; ++i)
-	if (inst->operands[i].qualifier != qualifiers[i])
-	  return false;
     }
 
   /* Update the qualifiers.  */
@@ -1344,6 +1398,18 @@ set_syntax_error (aarch64_operand_error *mismatch_detail, int idx,
 }
 
 static inline void
+set_invalid_regno_error (aarch64_operand_error *mismatch_detail, int idx,
+			 const char *prefix, int lower_bound, int upper_bound)
+{
+  if (mismatch_detail == NULL)
+    return;
+  set_error (mismatch_detail, AARCH64_OPDE_INVALID_REGNO, idx, NULL);
+  mismatch_detail->data[0].s = prefix;
+  mismatch_detail->data[1].i = lower_bound;
+  mismatch_detail->data[2].i = upper_bound;
+}
+
+static inline void
 set_out_of_range_error (aarch64_operand_error *mismatch_detail,
 			int idx, int lower_bound, int upper_bound,
 			const char* error)
@@ -1428,13 +1494,33 @@ set_unaligned_error (aarch64_operand_error *mismatch_detail, int idx,
 }
 
 static inline void
-set_reg_list_error (aarch64_operand_error *mismatch_detail, int idx,
-		    int expected_num)
+set_reg_list_length_error (aarch64_operand_error *mismatch_detail, int idx,
+			   int expected_num)
 {
   if (mismatch_detail == NULL)
     return;
-  set_error (mismatch_detail, AARCH64_OPDE_REG_LIST, idx, NULL);
-  mismatch_detail->data[0].i = expected_num;
+  set_error (mismatch_detail, AARCH64_OPDE_REG_LIST_LENGTH, idx, NULL);
+  mismatch_detail->data[0].i = 1 << expected_num;
+}
+
+static inline void
+set_reg_list_stride_error (aarch64_operand_error *mismatch_detail, int idx,
+			   int expected_num)
+{
+  if (mismatch_detail == NULL)
+    return;
+  set_error (mismatch_detail, AARCH64_OPDE_REG_LIST_STRIDE, idx, NULL);
+  mismatch_detail->data[0].i = 1 << expected_num;
+}
+
+static inline void
+set_invalid_vg_size (aarch64_operand_error *mismatch_detail,
+		     int idx, int expected)
+{
+  if (mismatch_detail == NULL)
+    return;
+  set_error (mismatch_detail, AARCH64_OPDE_INVALID_VG_SIZE, idx, NULL);
+  mismatch_detail->data[0].i = expected;
 }
 
 static inline void
@@ -1444,6 +1530,129 @@ set_other_error (aarch64_operand_error *mismatch_detail, int idx,
   if (mismatch_detail == NULL)
     return;
   set_error (mismatch_detail, AARCH64_OPDE_OTHER_ERROR, idx, error);
+}
+
+/* Check that indexed register operand OPND has a register in the range
+   [MIN_REGNO, MAX_REGNO] and an index in the range [MIN_INDEX, MAX_INDEX].
+   PREFIX is the register prefix, such as "z" for SVE vector registers.  */
+
+static bool
+check_reglane (const aarch64_opnd_info *opnd,
+	       aarch64_operand_error *mismatch_detail, int idx,
+	       const char *prefix, int min_regno, int max_regno,
+	       int min_index, int max_index)
+{
+  if (!value_in_range_p (opnd->reglane.regno, min_regno, max_regno))
+    {
+      set_invalid_regno_error (mismatch_detail, idx, prefix, min_regno,
+			       max_regno);
+      return false;
+    }
+  if (!value_in_range_p (opnd->reglane.index, min_index, max_index))
+    {
+      set_elem_idx_out_of_range_error (mismatch_detail, idx, min_index,
+				       max_index);
+      return false;
+    }
+  return true;
+}
+
+/* Check that register list operand OPND has NUM_REGS registers and a
+   register stride of STRIDE.  */
+
+static bool
+check_reglist (const aarch64_opnd_info *opnd,
+	       aarch64_operand_error *mismatch_detail, int idx,
+	       int num_regs, int stride)
+{
+  if (opnd->reglist.num_regs != num_regs)
+    {
+      set_reg_list_length_error (mismatch_detail, idx, num_regs);
+      return false;
+    }
+  if (opnd->reglist.stride != stride)
+    {
+      set_reg_list_stride_error (mismatch_detail, idx, stride);
+      return false;
+    }
+  return true;
+}
+
+/* Check that indexed ZA operand OPND has:
+
+   - a selection register in the range [MIN_WREG, MIN_WREG + 3]
+
+   - RANGE_SIZE consecutive immediate offsets.
+
+   - an initial immediate offset that is a multiple of RANGE_SIZE
+     in the range [0, MAX_VALUE * RANGE_SIZE]
+
+   - a vector group size of GROUP_SIZE.  */
+
+static bool
+check_za_access (const aarch64_opnd_info *opnd,
+		 aarch64_operand_error *mismatch_detail, int idx,
+		 int min_wreg, int max_value, unsigned int range_size,
+		 int group_size)
+{
+  if (!value_in_range_p (opnd->indexed_za.index.regno, min_wreg, min_wreg + 3))
+    {
+      if (min_wreg == 12)
+	set_other_error (mismatch_detail, idx,
+			 _("expected a selection register in the"
+			   " range w12-w15"));
+      else if (min_wreg == 8)
+	set_other_error (mismatch_detail, idx,
+			 _("expected a selection register in the"
+			   " range w8-w11"));
+      else
+	abort ();
+      return false;
+    }
+
+  int max_index = max_value * range_size;
+  if (!value_in_range_p (opnd->indexed_za.index.imm, 0, max_index))
+    {
+      set_offset_out_of_range_error (mismatch_detail, idx, 0, max_index);
+      return false;
+    }
+
+  if ((opnd->indexed_za.index.imm % range_size) != 0)
+    {
+      assert (range_size == 2 || range_size == 4);
+      set_other_error (mismatch_detail, idx,
+		       range_size == 2
+		       ? _("starting offset is not a multiple of 2")
+		       : _("starting offset is not a multiple of 4"));
+      return false;
+    }
+
+  if (opnd->indexed_za.index.countm1 != range_size - 1)
+    {
+      if (range_size == 1)
+	set_other_error (mismatch_detail, idx,
+			 _("expected a single offset rather than"
+			   " a range"));
+      else if (range_size == 2)
+	set_other_error (mismatch_detail, idx,
+			 _("expected a range of two offsets"));
+      else if (range_size == 4)
+	set_other_error (mismatch_detail, idx,
+			 _("expected a range of four offsets"));
+      else
+	abort ();
+      return false;
+    }
+
+  /* The vector group specifier is optional in assembly code.  */
+  if (opnd->indexed_za.group_size != 0
+      && opnd->indexed_za.group_size != group_size)
+    {
+      set_invalid_vg_size (mismatch_detail, idx, group_size);
+      return false;
+    }
+
+  return true;
 }
 
 /* General constraint checking based on operand code.
@@ -1539,47 +1748,72 @@ operand_general_constraint_met_p (const aarch64_opnd_info *opnds, int idx,
 	{
 	case AARCH64_OPND_SVE_Zm3_INDEX:
 	case AARCH64_OPND_SVE_Zm3_22_INDEX:
+	case AARCH64_OPND_SVE_Zm3_19_INDEX:
 	case AARCH64_OPND_SVE_Zm3_11_INDEX:
 	case AARCH64_OPND_SVE_Zm4_11_INDEX:
 	case AARCH64_OPND_SVE_Zm4_INDEX:
 	  size = get_operand_fields_width (get_operand_from_code (type));
 	  shift = get_operand_specific_data (&aarch64_operands[type]);
-	  mask = (1 << shift) - 1;
-	  if (opnd->reg.regno > mask)
-	    {
-	      assert (mask == 7 || mask == 15);
-	      set_other_error (mismatch_detail, idx,
-			       mask == 15
-			       ? _("z0-z15 expected")
-			       : _("z0-z7 expected"));
-	      return 0;
-	    }
-	  mask = (1u << (size - shift)) - 1;
-	  if (!value_in_range_p (opnd->reglane.index, 0, mask))
-	    {
-	      set_elem_idx_out_of_range_error (mismatch_detail, idx, 0, mask);
-	      return 0;
-	    }
+	  if (!check_reglane (opnd, mismatch_detail, idx,
+			      "z", 0, (1 << shift) - 1,
+			      0, (1u << (size - shift)) - 1))
+	    return 0;
 	  break;
 
 	case AARCH64_OPND_SVE_Zn_INDEX:
 	  size = aarch64_get_qualifier_esize (opnd->qualifier);
-	  if (!value_in_range_p (opnd->reglane.index, 0, 64 / size - 1))
+	  if (!check_reglane (opnd, mismatch_detail, idx, "z", 0, 31,
+			      0, 64 / size - 1))
+	    return 0;
+	  break;
+
+	case AARCH64_OPND_SME_PNn3_INDEX1:
+	case AARCH64_OPND_SME_PNn3_INDEX2:
+	  size = get_operand_field_width (get_operand_from_code (type), 1);
+	  if (!check_reglane (opnd, mismatch_detail, idx, "pn", 8, 15,
+			      0, (1 << size) - 1))
+	    return 0;
+	  break;
+
+	case AARCH64_OPND_SME_Zn_INDEX1_16:
+	case AARCH64_OPND_SME_Zn_INDEX2_15:
+	case AARCH64_OPND_SME_Zn_INDEX2_16:
+	case AARCH64_OPND_SME_Zn_INDEX3_14:
+	case AARCH64_OPND_SME_Zn_INDEX3_15:
+	case AARCH64_OPND_SME_Zn_INDEX4_14:
+	  size = get_operand_fields_width (get_operand_from_code (type)) - 5;
+	  if (!check_reglane (opnd, mismatch_detail, idx, "z", 0, 31,
+			      0, (1 << size) - 1))
+	    return 0;
+	  break;
+
+	case AARCH64_OPND_SME_Zm_INDEX1:
+	case AARCH64_OPND_SME_Zm_INDEX2:
+	case AARCH64_OPND_SME_Zm_INDEX3_1:
+	case AARCH64_OPND_SME_Zm_INDEX3_2:
+	case AARCH64_OPND_SME_Zm_INDEX3_10:
+	case AARCH64_OPND_SME_Zm_INDEX4_1:
+	case AARCH64_OPND_SME_Zm_INDEX4_10:
+	  size = get_operand_fields_width (get_operand_from_code (type)) - 4;
+	  if (!check_reglane (opnd, mismatch_detail, idx, "z", 0, 15,
+			      0, (1 << size) - 1))
+	    return 0;
+	  break;
+
+	case AARCH64_OPND_SME_Zm:
+	  if (opnd->reg.regno > 15)
 	    {
-	      set_elem_idx_out_of_range_error (mismatch_detail, idx,
-					       0, 64 / size - 1);
+	      set_invalid_regno_error (mismatch_detail, idx, "z", 0, 15);
 	      return 0;
 	    }
 	  break;
 
-	case AARCH64_OPND_SVE_ZnxN:
-	case AARCH64_OPND_SVE_ZtxN:
-	  if (opnd->reglist.num_regs != get_opcode_dependent_value (opcode))
-	    {
-	      set_other_error (mismatch_detail, idx,
-			       _("invalid register list"));
-	      return 0;
-	    }
+	case AARCH64_OPND_SME_PnT_Wm_imm:
+	  size = aarch64_get_qualifier_esize (opnd->qualifier);
+	  max_value = 16 / size - 1;
+	  if (!check_za_access (opnd, mismatch_detail, idx,
+				12, max_value, 1, 0))
+	    return 0;
 	  break;
 
 	default:
@@ -1587,12 +1821,143 @@ operand_general_constraint_met_p (const aarch64_opnd_info *opnds, int idx,
 	}
       break;
 
-    case AARCH64_OPND_CLASS_PRED_REG:
-      if (opnd->reg.regno >= 8
-	  && get_operand_fields_width (get_operand_from_code (type)) == 3)
+    case AARCH64_OPND_CLASS_SVE_REGLIST:
+      switch (type)
 	{
-	  set_other_error (mismatch_detail, idx, _("p0-p7 expected"));
-	  return 0;
+	case AARCH64_OPND_SME_Pdx2:
+	case AARCH64_OPND_SME_Zdnx2:
+	case AARCH64_OPND_SME_Zdnx4:
+	case AARCH64_OPND_SME_Zmx2:
+	case AARCH64_OPND_SME_Zmx4:
+	case AARCH64_OPND_SME_Znx2:
+	case AARCH64_OPND_SME_Znx4:
+	  num = get_operand_specific_data (&aarch64_operands[type]);
+	  if (!check_reglist (opnd, mismatch_detail, idx, num, 1))
+	    return 0;
+	  if ((opnd->reglist.first_regno % num) != 0)
+	    {
+	      set_other_error (mismatch_detail, idx,
+			       _("start register out of range"));
+	      return 0;
+	    }
+	  break;
+
+	case AARCH64_OPND_SME_Ztx2_STRIDED:
+	case AARCH64_OPND_SME_Ztx4_STRIDED:
+	  /* 2-register lists have a stride of 8 and 4-register lists
+	     have a stride of 4.  */
+	  num = get_operand_specific_data (&aarch64_operands[type]);
+	  if (!check_reglist (opnd, mismatch_detail, idx, num, 16 / num))
+	    return 0;
+	  num = 16 | (opnd->reglist.stride - 1);
+	  if ((opnd->reglist.first_regno & ~num) != 0)
+	    {
+	      set_other_error (mismatch_detail, idx,
+			       _("start register out of range"));
+	      return 0;
+	    }
+	  break;
+
+	case AARCH64_OPND_SME_PdxN:
+	case AARCH64_OPND_SVE_ZnxN:
+	case AARCH64_OPND_SVE_ZtxN:
+	  num = get_opcode_dependent_value (opcode);
+	  if (!check_reglist (opnd, mismatch_detail, idx, num, 1))
+	    return 0;
+	  break;
+
+	default:
+	  abort ();
+	}
+      break;
+
+    case AARCH64_OPND_CLASS_ZA_ACCESS:
+      switch (type)
+	{
+	case AARCH64_OPND_SME_ZA_HV_idx_src:
+	case AARCH64_OPND_SME_ZA_HV_idx_dest:
+	case AARCH64_OPND_SME_ZA_HV_idx_ldstr:
+	  size = aarch64_get_qualifier_esize (opnd->qualifier);
+	  max_value = 16 / size - 1;
+	  if (!check_za_access (opnd, mismatch_detail, idx, 12, max_value, 1,
+				get_opcode_dependent_value (opcode)))
+	    return 0;
+	  break;
+
+	case AARCH64_OPND_SME_ZA_array_off4:
+	  if (!check_za_access (opnd, mismatch_detail, idx, 12, 15, 1,
+				get_opcode_dependent_value (opcode)))
+	    return 0;
+	  break;
+
+	case AARCH64_OPND_SME_ZA_array_off3_0:
+	case AARCH64_OPND_SME_ZA_array_off3_5:
+	  if (!check_za_access (opnd, mismatch_detail, idx, 8, 7, 1,
+				get_opcode_dependent_value (opcode)))
+	    return 0;
+	  break;
+
+	case AARCH64_OPND_SME_ZA_array_off1x4:
+	  if (!check_za_access (opnd, mismatch_detail, idx, 8, 1, 4,
+				get_opcode_dependent_value (opcode)))
+	    return 0;
+	  break;
+
+	case AARCH64_OPND_SME_ZA_array_off2x2:
+	  if (!check_za_access (opnd, mismatch_detail, idx, 8, 3, 2,
+				get_opcode_dependent_value (opcode)))
+	    return 0;
+	  break;
+
+	case AARCH64_OPND_SME_ZA_array_off2x4:
+	  if (!check_za_access (opnd, mismatch_detail, idx, 8, 3, 4,
+				get_opcode_dependent_value (opcode)))
+	    return 0;
+	  break;
+
+	case AARCH64_OPND_SME_ZA_array_off3x2:
+	  if (!check_za_access (opnd, mismatch_detail, idx, 8, 7, 2,
+				get_opcode_dependent_value (opcode)))
+	    return 0;
+	  break;
+
+	case AARCH64_OPND_SME_ZA_HV_idx_srcxN:
+	case AARCH64_OPND_SME_ZA_HV_idx_destxN:
+	  size = aarch64_get_qualifier_esize (opnd->qualifier);
+	  num = get_opcode_dependent_value (opcode);
+	  max_value = 16 / num / size;
+	  if (max_value > 0)
+	    max_value -= 1;
+	  if (!check_za_access (opnd, mismatch_detail, idx,
+				12, max_value, num, 0))
+	    return 0;
+	  break;
+
+	default:
+	  abort ();
+	}
+      break;
+
+    case AARCH64_OPND_CLASS_PRED_REG:
+      switch (type)
+	{
+	case AARCH64_OPND_SME_PNd3:
+	case AARCH64_OPND_SME_PNg3:
+	  if (opnd->reg.regno < 8)
+	    {
+	      set_invalid_regno_error (mismatch_detail, idx, "pn", 8, 15);
+	      return 0;
+	    }
+	  break;
+
+	default:
+	  if (opnd->reg.regno >= 8
+	      && get_operand_fields_width (get_operand_from_code (type)) == 3)
+	    {
+	      set_invalid_regno_error (mismatch_detail, idx, "p", 0, 7);
+	      return 0;
+	    }
+	  break;
 	}
       break;
 
@@ -2044,25 +2409,24 @@ operand_general_constraint_met_p (const aarch64_opnd_info *opnds, int idx,
 	  assert (num >= 1 && num <= 4);
 	  /* Unless LD1/ST1, the number of registers should be equal to that
 	     of the structure elements.  */
-	  if (num != 1 && opnd->reglist.num_regs != num)
-	    {
-	      set_reg_list_error (mismatch_detail, idx, num);
-	      return 0;
-	    }
+	  if (num != 1 && !check_reglist (opnd, mismatch_detail, idx, num, 1))
+	    return 0;
 	  break;
 	case AARCH64_OPND_LVt_AL:
 	case AARCH64_OPND_LEt:
 	  assert (num >= 1 && num <= 4);
 	  /* The number of registers should be equal to that of the structure
 	     elements.  */
-	  if (opnd->reglist.num_regs != num)
-	    {
-	      set_reg_list_error (mismatch_detail, idx, num);
-	      return 0;
-	    }
+	  if (!check_reglist (opnd, mismatch_detail, idx, num, 1))
+	    return 0;
 	  break;
 	default:
 	  break;
+	}
+      if (opnd->reglist.stride != 1)
+	{
+	  set_reg_list_stride_error (mismatch_detail, idx, 1);
+	  return 0;
 	}
       break;
 
@@ -2185,6 +2549,7 @@ operand_general_constraint_met_p (const aarch64_opnd_info *opnds, int idx,
 	case AARCH64_OPND_SVE_UIMM7:
 	case AARCH64_OPND_SVE_UIMM8:
 	case AARCH64_OPND_SVE_UIMM8_53:
+	case AARCH64_OPND_CSSC_UIMM8:
 	  size = get_operand_fields_width (get_operand_from_code (type));
 	  assert (size < 32);
 	  if (!value_fit_unsigned_field_p (opnd->imm.value, size))
@@ -2215,6 +2580,7 @@ operand_general_constraint_met_p (const aarch64_opnd_info *opnds, int idx,
 	case AARCH64_OPND_SVE_SIMM5B:
 	case AARCH64_OPND_SVE_SIMM6:
 	case AARCH64_OPND_SVE_SIMM8:
+	case AARCH64_OPND_CSSC_SIMM8:
 	  size = get_operand_fields_width (get_operand_from_code (type));
 	  assert (size < 32);
 	  if (!value_fit_signed_field_p (opnd->imm.value, size))
@@ -2572,6 +2938,16 @@ operand_general_constraint_met_p (const aarch64_opnd_info *opnds, int idx,
 	    }
 	  break;
 
+	case AARCH64_OPND_SME_SHRIMM4:
+	  size = 1 << get_operand_fields_width (get_operand_from_code (type));
+	  if (!value_in_range_p (opnd->imm.value, 1, size))
+	    {
+	      set_imm_out_of_range_error (mismatch_detail, idx, 1, size);
+	      return 0;
+	    }
+	  break;
+
+	case AARCH64_OPND_SME_SHRIMM5:
 	case AARCH64_OPND_SVE_SHRIMM_PRED:
 	case AARCH64_OPND_SVE_SHRIMM_UNPRED:
 	case AARCH64_OPND_SVE_SHRIMM_UNPRED_22:
@@ -2580,6 +2956,20 @@ operand_general_constraint_met_p (const aarch64_opnd_info *opnds, int idx,
 	  if (!value_in_range_p (opnd->imm.value, 1, 8 * size))
 	    {
 	      set_imm_out_of_range_error (mismatch_detail, idx, 1, 8*size);
+	      return 0;
+	    }
+	  break;
+
+	case AARCH64_OPND_SME_ZT0_INDEX:
+	  if (!value_in_range_p (opnd->imm.value, 0, 56))
+	    {
+	      set_elem_idx_out_of_range_error (mismatch_detail, idx, 0, 56);
+	      return 0;
+	    }
+	  if (opnd->imm.value % 8 != 0)
+	    {
+	      set_other_error (mismatch_detail, idx,
+			       _("byte index must be a multiple of 8"));
 	      return 0;
 	    }
 	  break;
@@ -2602,6 +2992,15 @@ operand_general_constraint_met_p (const aarch64_opnd_info *opnds, int idx,
 	  if (opnds[1].imm.value < 0 || opnds[1].imm.value > max_value)
 	    {
 	      set_imm_out_of_range_error (mismatch_detail, 1, 0, max_value);
+	      return 0;
+	    }
+	  break;
+	case AARCH64_OPND_PRFOP:
+	  if (opcode->iclass == ldst_regoff && opnd->prfop->value >= 24)
+	    {
+	      set_other_error (mismatch_detail, idx,
+			       _("the register-index form of PRFM does"
+				 " not accept opcodes in the range 24-31"));
 	      return 0;
 	    }
 	  break;
@@ -2765,9 +3164,9 @@ aarch64_match_operands_constraint (aarch64_inst *inst,
         */
         case sme_ldr:
         case sme_str:
-          assert (inst->operands[0].type == AARCH64_OPND_SME_ZA_array);
+          assert (inst->operands[0].type == AARCH64_OPND_SME_ZA_array_off4);
           assert (inst->operands[1].type == AARCH64_OPND_SME_ADDR_RI_U4xVL);
-          if (inst->operands[0].za_tile_vector.index.imm
+          if (inst->operands[0].indexed_za.index.imm
               != inst->operands[1].addr.offset.imm)
             {
               if (mismatch_detail)
@@ -2780,23 +3179,38 @@ aarch64_match_operands_constraint (aarch64_inst *inst,
           break;
 
         default:
-          /* Check for cases where a source register needs to be the same as the
-             destination register.  Do this before matching qualifiers since if
-             an instruction has both invalid tying and invalid qualifiers,
-             the error about qualifiers would suggest several alternative
-             instructions that also have invalid tying.  */
-          if (inst->operands[0].reg.regno
-              != inst->operands[i].reg.regno)
-            {
-              if (mismatch_detail)
-                {
-                  mismatch_detail->kind = AARCH64_OPDE_UNTIED_OPERAND;
-                  mismatch_detail->index = i;
-                  mismatch_detail->error = NULL;
-                }
-              return 0;
-            }
-          break;
+	  {
+	    /* Check for cases where a source register needs to be the
+	       same as the destination register.  Do this before
+	       matching qualifiers since if an instruction has both
+	       invalid tying and invalid qualifiers, the error about
+	       qualifiers would suggest several alternative instructions
+	       that also have invalid tying.  */
+	    enum aarch64_operand_class op_class1
+	       = aarch64_get_operand_class (inst->operands[0].type);
+	    enum aarch64_operand_class op_class2
+	       = aarch64_get_operand_class (inst->operands[i].type);
+	    assert (op_class1 == op_class2);
+	    if (op_class1 == AARCH64_OPND_CLASS_SVE_REGLIST
+		? ((inst->operands[0].reglist.first_regno
+		    != inst->operands[i].reglist.first_regno)
+		   || (inst->operands[0].reglist.num_regs
+		       != inst->operands[i].reglist.num_regs)
+		   || (inst->operands[0].reglist.stride
+		       != inst->operands[i].reglist.stride))
+		: (inst->operands[0].reg.regno
+		   != inst->operands[i].reg.regno))
+	      {
+		if (mismatch_detail)
+		  {
+		    mismatch_detail->kind = AARCH64_OPDE_UNTIED_OPERAND;
+		    mismatch_detail->index = i;
+		    mismatch_detail->error = NULL;
+		  }
+		return 0;
+	      }
+	    break;
+	  }
         }
     }
 
@@ -2810,7 +3224,9 @@ aarch64_match_operands_constraint (aarch64_inst *inst,
      constraint checking will carried out by operand_general_constraint_met_p,
      which has be to called after this in order to get all of the operands'
      qualifiers established.  */
-  if (match_operands_qualifier (inst, true /* update_p */) == 0)
+  int invalid_count;
+  if (match_operands_qualifier (inst, true /* update_p */,
+				&invalid_count) == 0)
     {
       DEBUG_TRACE ("FAIL on operand qualifier matching");
       if (mismatch_detail)
@@ -2821,6 +3237,7 @@ aarch64_match_operands_constraint (aarch64_inst *inst,
 	  mismatch_detail->kind = AARCH64_OPDE_INVALID_VARIANT;
 	  mismatch_detail->index = -1;
 	  mismatch_detail->error = NULL;
+	  mismatch_detail->data[0].i = invalid_count;
 	}
       return 0;
     }
@@ -3038,18 +3455,80 @@ expand_fp_imm (int size, uint32_t imm8)
   return imm;
 }
 
+/* Return a string based on FMT with the register style applied.  */
+
+static const char *
+style_reg (struct aarch64_styler *styler, const char *fmt, ...)
+{
+  const char *txt;
+  va_list ap;
+
+  va_start (ap, fmt);
+  txt = styler->apply_style (styler, dis_style_register, fmt, ap);
+  va_end (ap);
+
+  return txt;
+}
+
+/* Return a string based on FMT with the immediate style applied.  */
+
+static const char *
+style_imm (struct aarch64_styler *styler, const char *fmt, ...)
+{
+  const char *txt;
+  va_list ap;
+
+  va_start (ap, fmt);
+  txt = styler->apply_style (styler, dis_style_immediate, fmt, ap);
+  va_end (ap);
+
+  return txt;
+}
+
+/* Return a string based on FMT with the sub-mnemonic style applied.  */
+
+static const char *
+style_sub_mnem (struct aarch64_styler *styler, const char *fmt, ...)
+{
+  const char *txt;
+  va_list ap;
+
+  va_start (ap, fmt);
+  txt = styler->apply_style (styler, dis_style_sub_mnemonic, fmt, ap);
+  va_end (ap);
+
+  return txt;
+}
+
+/* Return a string based on FMT with the address style applied.  */
+
+static const char *
+style_addr (struct aarch64_styler *styler, const char *fmt, ...)
+{
+  const char *txt;
+  va_list ap;
+
+  va_start (ap, fmt);
+  txt = styler->apply_style (styler, dis_style_address, fmt, ap);
+  va_end (ap);
+
+  return txt;
+}
+
 /* Produce the string representation of the register list operand *OPND
    in the buffer pointed by BUF of size SIZE.  PREFIX is the part of
    the register name that comes before the register number, such as "v".  */
 static void
 print_register_list (char *buf, size_t size, const aarch64_opnd_info *opnd,
-		     const char *prefix)
+		     const char *prefix, struct aarch64_styler *styler)
 {
+  const int mask = (prefix[0] == 'p' ? 15 : 31);
   const int num_regs = opnd->reglist.num_regs;
+  const int stride = opnd->reglist.stride;
   const int first_reg = opnd->reglist.first_regno;
-  const int last_reg = (first_reg + num_regs - 1) & 0x1f;
+  const int last_reg = (first_reg + (num_regs - 1) * stride) & mask;
   const char *qlf_name = aarch64_get_qualifier_name (opnd->qualifier);
-  char tb[8];	/* Temporary buffer.  */
+  char tb[16];	/* Temporary buffer.  */
 
   assert (opnd->type != AARCH64_OPND_LEt || opnd->reglist.has_index);
   assert (num_regs >= 1 && num_regs <= 4);
@@ -3057,41 +3536,52 @@ print_register_list (char *buf, size_t size, const aarch64_opnd_info *opnd,
   /* Prepare the index if any.  */
   if (opnd->reglist.has_index)
     /* PR 21096: The %100 is to silence a warning about possible truncation.  */
-    snprintf (tb, 8, "[%" PRIi64 "]", (opnd->reglist.index % 100));
+    snprintf (tb, sizeof (tb), "[%s]",
+	      style_imm (styler, "%" PRIi64, (opnd->reglist.index % 100)));
   else
     tb[0] = '\0';
 
   /* The hyphenated form is preferred for disassembly if there are
      more than two registers in the list, and the register numbers
      are monotonically increasing in increments of one.  */
-  if (num_regs > 2 && last_reg > first_reg)
-    snprintf (buf, size, "{%s%d.%s-%s%d.%s}%s", prefix, first_reg, qlf_name,
-	      prefix, last_reg, qlf_name, tb);
+  if (stride == 1 && num_regs > 1)
+    snprintf (buf, size, "{%s-%s}%s",
+	      style_reg (styler, "%s%d.%s", prefix, first_reg, qlf_name),
+	      style_reg (styler, "%s%d.%s", prefix, last_reg, qlf_name), tb);
   else
     {
       const int reg0 = first_reg;
-      const int reg1 = (first_reg + 1) & 0x1f;
-      const int reg2 = (first_reg + 2) & 0x1f;
-      const int reg3 = (first_reg + 3) & 0x1f;
+      const int reg1 = (first_reg + stride) & mask;
+      const int reg2 = (first_reg + stride * 2) & mask;
+      const int reg3 = (first_reg + stride * 3) & mask;
 
       switch (num_regs)
 	{
 	case 1:
-	  snprintf (buf, size, "{%s%d.%s}%s", prefix, reg0, qlf_name, tb);
+	  snprintf (buf, size, "{%s}%s",
+		    style_reg (styler, "%s%d.%s", prefix, reg0, qlf_name),
+		    tb);
 	  break;
 	case 2:
-	  snprintf (buf, size, "{%s%d.%s, %s%d.%s}%s", prefix, reg0, qlf_name,
-		    prefix, reg1, qlf_name, tb);
+	  snprintf (buf, size, "{%s, %s}%s",
+		    style_reg (styler, "%s%d.%s", prefix, reg0, qlf_name),
+		    style_reg (styler, "%s%d.%s", prefix, reg1, qlf_name),
+		    tb);
 	  break;
 	case 3:
-	  snprintf (buf, size, "{%s%d.%s, %s%d.%s, %s%d.%s}%s",
-		    prefix, reg0, qlf_name, prefix, reg1, qlf_name,
-		    prefix, reg2, qlf_name, tb);
+	  snprintf (buf, size, "{%s, %s, %s}%s",
+		    style_reg (styler, "%s%d.%s", prefix, reg0, qlf_name),
+		    style_reg (styler, "%s%d.%s", prefix, reg1, qlf_name),
+		    style_reg (styler, "%s%d.%s", prefix, reg2, qlf_name),
+		    tb);
 	  break;
 	case 4:
-	  snprintf (buf, size, "{%s%d.%s, %s%d.%s, %s%d.%s, %s%d.%s}%s",
-		    prefix, reg0, qlf_name, prefix, reg1, qlf_name,
-		    prefix, reg2, qlf_name, prefix, reg3, qlf_name, tb);
+	  snprintf (buf, size, "{%s, %s, %s, %s}%s",
+		    style_reg (styler, "%s%d.%s", prefix, reg0, qlf_name),
+		    style_reg (styler, "%s%d.%s", prefix, reg1, qlf_name),
+		    style_reg (styler, "%s%d.%s", prefix, reg2, qlf_name),
+		    style_reg (styler, "%s%d.%s", prefix, reg3, qlf_name),
+		    tb);
 	  break;
 	}
     }
@@ -3103,32 +3593,41 @@ print_register_list (char *buf, size_t size, const aarch64_opnd_info *opnd,
 static void
 print_immediate_offset_address (char *buf, size_t size,
 				const aarch64_opnd_info *opnd,
-				const char *base)
+				const char *base,
+				struct aarch64_styler *styler)
 {
   if (opnd->addr.writeback)
     {
       if (opnd->addr.preind)
         {
 	  if (opnd->type == AARCH64_OPND_ADDR_SIMM10 && !opnd->addr.offset.imm)
-            snprintf (buf, size, "[%s]!", base);
+	    snprintf (buf, size, "[%s]!", style_reg (styler, base));
           else
-	    snprintf (buf, size, "[%s, #%d]!", base, opnd->addr.offset.imm);
+	    snprintf (buf, size, "[%s, %s]!",
+		      style_reg (styler, base),
+		      style_imm (styler, "#%d", opnd->addr.offset.imm));
         }
       else
-	snprintf (buf, size, "[%s], #%d", base, opnd->addr.offset.imm);
+	snprintf (buf, size, "[%s], %s",
+		  style_reg (styler, base),
+		  style_imm (styler, "#%d", opnd->addr.offset.imm));
     }
   else
     {
       if (opnd->shifter.operator_present)
 	{
 	  assert (opnd->shifter.kind == AARCH64_MOD_MUL_VL);
-	  snprintf (buf, size, "[%s, #%d, mul vl]",
-		    base, opnd->addr.offset.imm);
+	  snprintf (buf, size, "[%s, %s, %s]",
+		    style_reg (styler, base),
+		    style_imm (styler, "#%d", opnd->addr.offset.imm),
+		    style_sub_mnem (styler, "mul vl"));
 	}
       else if (opnd->addr.offset.imm)
-	snprintf (buf, size, "[%s, #%d]", base, opnd->addr.offset.imm);
+	snprintf (buf, size, "[%s, %s]",
+		  style_reg (styler, base),
+		  style_imm (styler, "#%d", opnd->addr.offset.imm));
       else
-	snprintf (buf, size, "[%s]", base);
+	snprintf (buf, size, "[%s]", style_reg (styler, base));
     }
 }
 
@@ -3138,9 +3637,10 @@ print_immediate_offset_address (char *buf, size_t size,
 static void
 print_register_offset_address (char *buf, size_t size,
 			       const aarch64_opnd_info *opnd,
-			       const char *base, const char *offset)
+			       const char *base, const char *offset,
+			       struct aarch64_styler *styler)
 {
-  char tb[16];			/* Temporary buffer.  */
+  char tb[32];			/* Temporary buffer.  */
   bool print_extend_p = true;
   bool print_amount_p = true;
   const char *shift_name = aarch64_operand_modifiers[opnd->shifter.kind].name;
@@ -3161,16 +3661,20 @@ print_register_offset_address (char *buf, size_t size,
   if (print_extend_p)
     {
       if (print_amount_p)
-	snprintf (tb, sizeof (tb), ", %s #%" PRIi64, shift_name,
+	snprintf (tb, sizeof (tb), ", %s %s",
+		  style_sub_mnem (styler, shift_name),
+		  style_imm (styler, "#%" PRIi64,
   /* PR 21096: The %100 is to silence a warning about possible truncation.  */
-		  (opnd->shifter.amount % 100));
+			     (opnd->shifter.amount % 100)));
       else
-	snprintf (tb, sizeof (tb), ", %s", shift_name);
+	snprintf (tb, sizeof (tb), ", %s",
+		  style_sub_mnem (styler, shift_name));
     }
   else
     tb[0] = '\0';
 
-  snprintf (buf, size, "[%s, %s%s]", base, offset, tb);
+  snprintf (buf, size, "[%s, %s%s]", style_reg (styler, base),
+	    style_reg (styler, offset), tb);
 }
 
 /* Print ZA tiles from imm8 in ZERO instruction.
@@ -3183,7 +3687,8 @@ print_register_offset_address (char *buf, size_t size,
     * An all-zeros immediate is disassembled as an empty list { }.
 */
 static void
-print_sme_za_list(char *buf, size_t size, int mask)
+print_sme_za_list (char *buf, size_t size, int mask,
+		   struct aarch64_styler *styler)
 {
   const char* zan[] = { "za",    "za0.h", "za1.h", "za0.s",
                         "za1.s", "za2.s", "za3.s", "za0.d",
@@ -3203,9 +3708,9 @@ print_sme_za_list(char *buf, size_t size, int mask)
         {
           mask &= ~zan_v[i];
           if (k > 1)
-            k += snprintf (buf + k, size - k, ", %s", zan[i]);
-          else
-            k += snprintf (buf + k, size - k, "%s", zan[i]);
+	    k += snprintf (buf + k, size - k, ", ");
+
+	  k += snprintf (buf + k, size - k, "%s", style_reg (styler, zan[i]));
         }
       if (mask == 0)
         break;
@@ -3229,13 +3734,23 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
 		       const aarch64_opcode *opcode,
 		       const aarch64_opnd_info *opnds, int idx, int *pcrel_p,
 		       bfd_vma *address, char** notes,
-		       aarch64_feature_set features)
+		       char *comment, size_t comment_size,
+		       aarch64_feature_set features,
+		       struct aarch64_styler *styler)
 {
   unsigned int i, num_conds;
   const char *name = NULL;
   const aarch64_opnd_info *opnd = opnds + idx;
   enum aarch64_modifier_kind kind;
   uint64_t addr, enum_value;
+
+  if (comment != NULL)
+    {
+      assert (comment_size > 0);
+      comment[0] = '\0';
+    }
+  else
+    assert (comment_size == 0);
 
   buf[0] = '\0';
   if (pcrel_p)
@@ -3270,7 +3785,8 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
       assert (opnd->qualifier == AARCH64_OPND_QLF_W
 	      || opnd->qualifier == AARCH64_OPND_QLF_X);
       snprintf (buf, size, "%s",
-		get_int_reg_name (opnd->reg.regno, opnd->qualifier, 0));
+		style_reg (styler, get_int_reg_name (opnd->reg.regno,
+						     opnd->qualifier, 0)));
       break;
 
     case AARCH64_OPND_Rd_SP:
@@ -3283,7 +3799,8 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
 	      || opnd->qualifier == AARCH64_OPND_QLF_X
 	      || opnd->qualifier == AARCH64_OPND_QLF_SP);
       snprintf (buf, size, "%s",
-		get_int_reg_name (opnd->reg.regno, opnd->qualifier, 1));
+		style_reg (styler, get_int_reg_name (opnd->reg.regno,
+						     opnd->qualifier, 1)));
       break;
 
     case AARCH64_OPND_Rm_EXT:
@@ -3303,19 +3820,21 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
 	    {
 	      /* Shifter omitted.  */
 	      snprintf (buf, size, "%s",
-			get_int_reg_name (opnd->reg.regno, opnd->qualifier, 0));
+			style_reg (styler,
+				   get_int_reg_name (opnd->reg.regno,
+						     opnd->qualifier, 0)));
 	      break;
 	    }
 	}
       if (opnd->shifter.amount)
-	snprintf (buf, size, "%s, %s #%" PRIi64,
-		  get_int_reg_name (opnd->reg.regno, opnd->qualifier, 0),
-		  aarch64_operand_modifiers[kind].name,
-		  opnd->shifter.amount);
+	snprintf (buf, size, "%s, %s %s",
+		  style_reg (styler, get_int_reg_name (opnd->reg.regno, opnd->qualifier, 0)),
+		  style_sub_mnem (styler, aarch64_operand_modifiers[kind].name),
+		  style_imm (styler, "#%" PRIi64, opnd->shifter.amount));
       else
 	snprintf (buf, size, "%s, %s",
-		  get_int_reg_name (opnd->reg.regno, opnd->qualifier, 0),
-		  aarch64_operand_modifiers[kind].name);
+		  style_reg (styler, get_int_reg_name (opnd->reg.regno, opnd->qualifier, 0)),
+		  style_sub_mnem (styler, aarch64_operand_modifiers[kind].name));
       break;
 
     case AARCH64_OPND_Rm_SFT:
@@ -3323,12 +3842,13 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
 	      || opnd->qualifier == AARCH64_OPND_QLF_X);
       if (opnd->shifter.amount == 0 && opnd->shifter.kind == AARCH64_MOD_LSL)
 	snprintf (buf, size, "%s",
-		  get_int_reg_name (opnd->reg.regno, opnd->qualifier, 0));
+		  style_reg (styler, get_int_reg_name (opnd->reg.regno,
+						       opnd->qualifier, 0)));
       else
-	snprintf (buf, size, "%s, %s #%" PRIi64,
-		  get_int_reg_name (opnd->reg.regno, opnd->qualifier, 0),
-		  aarch64_operand_modifiers[opnd->shifter.kind].name,
-		  opnd->shifter.amount);
+	snprintf (buf, size, "%s, %s %s",
+		  style_reg (styler, get_int_reg_name (opnd->reg.regno, opnd->qualifier, 0)),
+		  style_sub_mnem (styler, aarch64_operand_modifiers[opnd->shifter.kind].name),
+		  style_imm (styler, "#%" PRIi64, opnd->shifter.amount));
       break;
 
     case AARCH64_OPND_Fd:
@@ -3344,16 +3864,19 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
     case AARCH64_OPND_SVE_Vd:
     case AARCH64_OPND_SVE_Vm:
     case AARCH64_OPND_SVE_Vn:
-      snprintf (buf, size, "%s%d", aarch64_get_qualifier_name (opnd->qualifier),
-		opnd->reg.regno);
+      snprintf (buf, size, "%s",
+		style_reg (styler, "%s%d",
+			   aarch64_get_qualifier_name (opnd->qualifier),
+			   opnd->reg.regno));
       break;
 
     case AARCH64_OPND_Va:
     case AARCH64_OPND_Vd:
     case AARCH64_OPND_Vn:
     case AARCH64_OPND_Vm:
-      snprintf (buf, size, "v%d.%s", opnd->reg.regno,
-		aarch64_get_qualifier_name (opnd->qualifier));
+      snprintf (buf, size, "%s",
+		style_reg (styler, "v%d.%s", opnd->reg.regno,
+			   aarch64_get_qualifier_name (opnd->qualifier)));
       break;
 
     case AARCH64_OPND_Ed:
@@ -3361,21 +3884,24 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
     case AARCH64_OPND_Em:
     case AARCH64_OPND_Em16:
     case AARCH64_OPND_SM3_IMM2:
-      snprintf (buf, size, "v%d.%s[%" PRIi64 "]", opnd->reglane.regno,
-		aarch64_get_qualifier_name (opnd->qualifier),
-		opnd->reglane.index);
+      snprintf (buf, size, "%s[%s]",
+		style_reg (styler, "v%d.%s", opnd->reglane.regno,
+			   aarch64_get_qualifier_name (opnd->qualifier)),
+		style_imm (styler, "%" PRIi64, opnd->reglane.index));
       break;
 
     case AARCH64_OPND_VdD1:
     case AARCH64_OPND_VnD1:
-      snprintf (buf, size, "v%d.d[1]", opnd->reg.regno);
+      snprintf (buf, size, "%s[%s]",
+		style_reg (styler, "v%d.d", opnd->reg.regno),
+		style_imm (styler, "1"));
       break;
 
     case AARCH64_OPND_LVn:
     case AARCH64_OPND_LVt:
     case AARCH64_OPND_LVt_AL:
     case AARCH64_OPND_LEt:
-      print_register_list (buf, size, opnd, "v");
+      print_register_list (buf, size, opnd, "v", styler);
       break;
 
     case AARCH64_OPND_SVE_Pd:
@@ -3388,14 +3914,50 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
     case AARCH64_OPND_SVE_Pt:
     case AARCH64_OPND_SME_Pm:
       if (opnd->qualifier == AARCH64_OPND_QLF_NIL)
-	snprintf (buf, size, "p%d", opnd->reg.regno);
+	snprintf (buf, size, "%s",
+		  style_reg (styler, "p%d", opnd->reg.regno));
       else if (opnd->qualifier == AARCH64_OPND_QLF_P_Z
 	       || opnd->qualifier == AARCH64_OPND_QLF_P_M)
-	snprintf (buf, size, "p%d/%s", opnd->reg.regno,
-		  aarch64_get_qualifier_name (opnd->qualifier));
+	snprintf (buf, size, "%s",
+		  style_reg (styler, "p%d/%s", opnd->reg.regno,
+			     aarch64_get_qualifier_name (opnd->qualifier)));
       else
-	snprintf (buf, size, "p%d.%s", opnd->reg.regno,
-		  aarch64_get_qualifier_name (opnd->qualifier));
+	snprintf (buf, size, "%s",
+		  style_reg (styler, "p%d.%s", opnd->reg.regno,
+			     aarch64_get_qualifier_name (opnd->qualifier)));
+      break;
+
+    case AARCH64_OPND_SVE_PNd:
+    case AARCH64_OPND_SVE_PNg4_10:
+    case AARCH64_OPND_SVE_PNn:
+    case AARCH64_OPND_SVE_PNt:
+    case AARCH64_OPND_SME_PNd3:
+    case AARCH64_OPND_SME_PNg3:
+    case AARCH64_OPND_SME_PNn:
+      if (opnd->qualifier == AARCH64_OPND_QLF_NIL)
+	snprintf (buf, size, "%s",
+		  style_reg (styler, "pn%d", opnd->reg.regno));
+      else if (opnd->qualifier == AARCH64_OPND_QLF_P_Z
+	       || opnd->qualifier == AARCH64_OPND_QLF_P_M)
+	snprintf (buf, size, "%s",
+		  style_reg (styler, "pn%d/%s", opnd->reg.regno,
+			     aarch64_get_qualifier_name (opnd->qualifier)));
+      else
+	snprintf (buf, size, "%s",
+		  style_reg (styler, "pn%d.%s", opnd->reg.regno,
+			     aarch64_get_qualifier_name (opnd->qualifier)));
+      break;
+
+    case AARCH64_OPND_SME_Pdx2:
+    case AARCH64_OPND_SME_PdxN:
+      print_register_list (buf, size, opnd, "p", styler);
+      break;
+
+    case AARCH64_OPND_SME_PNn3_INDEX1:
+    case AARCH64_OPND_SME_PNn3_INDEX2:
+      snprintf (buf, size, "%s[%s]",
+		style_reg (styler, "pn%d", opnd->reglane.regno),
+		style_imm (styler, "%" PRIi64, opnd->reglane.index));
       break;
 
     case AARCH64_OPND_SVE_Za_5:
@@ -3405,73 +3967,147 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
     case AARCH64_OPND_SVE_Zm_16:
     case AARCH64_OPND_SVE_Zn:
     case AARCH64_OPND_SVE_Zt:
+    case AARCH64_OPND_SME_Zm:
       if (opnd->qualifier == AARCH64_OPND_QLF_NIL)
-	snprintf (buf, size, "z%d", opnd->reg.regno);
+	snprintf (buf, size, "%s", style_reg (styler, "z%d", opnd->reg.regno));
       else
-	snprintf (buf, size, "z%d.%s", opnd->reg.regno,
-		  aarch64_get_qualifier_name (opnd->qualifier));
+	snprintf (buf, size, "%s",
+		  style_reg (styler, "z%d.%s", opnd->reg.regno,
+			     aarch64_get_qualifier_name (opnd->qualifier)));
       break;
 
     case AARCH64_OPND_SVE_ZnxN:
     case AARCH64_OPND_SVE_ZtxN:
-      print_register_list (buf, size, opnd, "z");
+    case AARCH64_OPND_SME_Zdnx2:
+    case AARCH64_OPND_SME_Zdnx4:
+    case AARCH64_OPND_SME_Zmx2:
+    case AARCH64_OPND_SME_Zmx4:
+    case AARCH64_OPND_SME_Znx2:
+    case AARCH64_OPND_SME_Znx4:
+    case AARCH64_OPND_SME_Ztx2_STRIDED:
+    case AARCH64_OPND_SME_Ztx4_STRIDED:
+      print_register_list (buf, size, opnd, "z", styler);
       break;
 
     case AARCH64_OPND_SVE_Zm3_INDEX:
     case AARCH64_OPND_SVE_Zm3_22_INDEX:
+    case AARCH64_OPND_SVE_Zm3_19_INDEX:
     case AARCH64_OPND_SVE_Zm3_11_INDEX:
     case AARCH64_OPND_SVE_Zm4_11_INDEX:
     case AARCH64_OPND_SVE_Zm4_INDEX:
     case AARCH64_OPND_SVE_Zn_INDEX:
-      snprintf (buf, size, "z%d.%s[%" PRIi64 "]", opnd->reglane.regno,
-		aarch64_get_qualifier_name (opnd->qualifier),
-		opnd->reglane.index);
+    case AARCH64_OPND_SME_Zm_INDEX1:
+    case AARCH64_OPND_SME_Zm_INDEX2:
+    case AARCH64_OPND_SME_Zm_INDEX3_1:
+    case AARCH64_OPND_SME_Zm_INDEX3_2:
+    case AARCH64_OPND_SME_Zm_INDEX3_10:
+    case AARCH64_OPND_SME_Zm_INDEX4_1:
+    case AARCH64_OPND_SME_Zm_INDEX4_10:
+    case AARCH64_OPND_SME_Zn_INDEX1_16:
+    case AARCH64_OPND_SME_Zn_INDEX2_15:
+    case AARCH64_OPND_SME_Zn_INDEX2_16:
+    case AARCH64_OPND_SME_Zn_INDEX3_14:
+    case AARCH64_OPND_SME_Zn_INDEX3_15:
+    case AARCH64_OPND_SME_Zn_INDEX4_14:
+      snprintf (buf, size, "%s[%s]",
+		(opnd->qualifier == AARCH64_OPND_QLF_NIL
+		 ? style_reg (styler, "z%d", opnd->reglane.regno)
+		 : style_reg (styler, "z%d.%s", opnd->reglane.regno,
+			      aarch64_get_qualifier_name (opnd->qualifier))),
+		style_imm (styler, "%" PRIi64, opnd->reglane.index));
       break;
 
     case AARCH64_OPND_SME_ZAda_2b:
     case AARCH64_OPND_SME_ZAda_3b:
-      snprintf (buf, size, "za%d.%s", opnd->reg.regno,
-                aarch64_get_qualifier_name (opnd->qualifier));
+      snprintf (buf, size, "%s",
+		style_reg (styler, "za%d.%s", opnd->reg.regno,
+			   aarch64_get_qualifier_name (opnd->qualifier)));
       break;
 
     case AARCH64_OPND_SME_ZA_HV_idx_src:
+    case AARCH64_OPND_SME_ZA_HV_idx_srcxN:
     case AARCH64_OPND_SME_ZA_HV_idx_dest:
+    case AARCH64_OPND_SME_ZA_HV_idx_destxN:
     case AARCH64_OPND_SME_ZA_HV_idx_ldstr:
-      snprintf (buf, size, "%sza%d%c.%s[w%d, %d]%s",
-                opnd->type == AARCH64_OPND_SME_ZA_HV_idx_ldstr ? "{" : "",
-                opnd->za_tile_vector.regno,
-                opnd->za_tile_vector.v == 1 ? 'v' : 'h',
-                aarch64_get_qualifier_name (opnd->qualifier),
-                opnd->za_tile_vector.index.regno,
-                opnd->za_tile_vector.index.imm,
-                opnd->type == AARCH64_OPND_SME_ZA_HV_idx_ldstr ? "}" : "");
+      snprintf (buf, size, "%s%s[%s, %s%s%s%s%s]%s",
+		opnd->type == AARCH64_OPND_SME_ZA_HV_idx_ldstr ? "{" : "",
+		style_reg (styler, "za%d%c.%s",
+			   opnd->indexed_za.regno,
+			   opnd->indexed_za.v == 1 ? 'v' : 'h',
+			   aarch64_get_qualifier_name (opnd->qualifier)),
+		style_reg (styler, "w%d", opnd->indexed_za.index.regno),
+		style_imm (styler, "%" PRIi64, opnd->indexed_za.index.imm),
+		opnd->indexed_za.index.countm1 ? ":" : "",
+		(opnd->indexed_za.index.countm1
+		 ? style_imm (styler, "%d",
+			      opnd->indexed_za.index.imm
+			      + opnd->indexed_za.index.countm1)
+		 : ""),
+		opnd->indexed_za.group_size ? ", " : "",
+		opnd->indexed_za.group_size == 2
+		? style_sub_mnem (styler, "vgx2")
+		: opnd->indexed_za.group_size == 4
+		? style_sub_mnem (styler, "vgx4") : "",
+		opnd->type == AARCH64_OPND_SME_ZA_HV_idx_ldstr ? "}" : "");
       break;
 
     case AARCH64_OPND_SME_list_of_64bit_tiles:
-      print_sme_za_list (buf, size, opnd->reg.regno);
+      print_sme_za_list (buf, size, opnd->reg.regno, styler);
       break;
 
-    case AARCH64_OPND_SME_ZA_array:
-      snprintf (buf, size, "za[w%d, %d]",
-                opnd->za_tile_vector.index.regno,
-                opnd->za_tile_vector.index.imm);
+    case AARCH64_OPND_SME_ZA_array_off1x4:
+    case AARCH64_OPND_SME_ZA_array_off2x2:
+    case AARCH64_OPND_SME_ZA_array_off2x4:
+    case AARCH64_OPND_SME_ZA_array_off3_0:
+    case AARCH64_OPND_SME_ZA_array_off3_5:
+    case AARCH64_OPND_SME_ZA_array_off3x2:
+    case AARCH64_OPND_SME_ZA_array_off4:
+      snprintf (buf, size, "%s[%s, %s%s%s%s%s]",
+		style_reg (styler, "za%s%s",
+			   opnd->qualifier == AARCH64_OPND_QLF_NIL ? "" : ".",
+			   (opnd->qualifier == AARCH64_OPND_QLF_NIL
+			    ? ""
+			    : aarch64_get_qualifier_name (opnd->qualifier))),
+		style_reg (styler, "w%d", opnd->indexed_za.index.regno),
+		style_imm (styler, "%" PRIi64, opnd->indexed_za.index.imm),
+		opnd->indexed_za.index.countm1 ? ":" : "",
+		(opnd->indexed_za.index.countm1
+		 ? style_imm (styler, "%d",
+			      opnd->indexed_za.index.imm
+			      + opnd->indexed_za.index.countm1)
+		 : ""),
+		opnd->indexed_za.group_size ? ", " : "",
+		opnd->indexed_za.group_size == 2
+		? style_sub_mnem (styler, "vgx2")
+		: opnd->indexed_za.group_size == 4
+		? style_sub_mnem (styler, "vgx4") : "");
       break;
 
     case AARCH64_OPND_SME_SM_ZA:
-      snprintf (buf, size, "%s", opnd->reg.regno == 's' ? "sm" : "za");
+      snprintf (buf, size, "%s",
+		style_reg (styler, opnd->reg.regno == 's' ? "sm" : "za"));
       break;
 
     case AARCH64_OPND_SME_PnT_Wm_imm:
-      snprintf (buf, size, "p%d.%s[w%d, %d]",
-                opnd->za_tile_vector.regno,
-                aarch64_get_qualifier_name (opnd->qualifier),
-                opnd->za_tile_vector.index.regno,
-                opnd->za_tile_vector.index.imm);
+      snprintf (buf, size, "%s[%s, %s]",
+		style_reg (styler, "p%d.%s", opnd->indexed_za.regno,
+			   aarch64_get_qualifier_name (opnd->qualifier)),
+		style_reg (styler, "w%d", opnd->indexed_za.index.regno),
+		style_imm (styler, "%" PRIi64, opnd->indexed_za.index.imm));
+      break;
+
+    case AARCH64_OPND_SME_VLxN_10:
+    case AARCH64_OPND_SME_VLxN_13:
+      enum_value = opnd->imm.value;
+      assert (enum_value < ARRAY_SIZE (aarch64_sme_vlxn_array));
+      snprintf (buf, size, "%s",
+		style_sub_mnem (styler, aarch64_sme_vlxn_array[enum_value]));
       break;
 
     case AARCH64_OPND_CRn:
     case AARCH64_OPND_CRm:
-      snprintf (buf, size, "C%" PRIi64, opnd->imm.value);
+      snprintf (buf, size, "%s",
+		style_reg (styler, "C%" PRIi64, opnd->imm.value));
       break;
 
     case AARCH64_OPND_IDX:
@@ -3492,6 +4128,8 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
     case AARCH64_OPND_FBITS:
     case AARCH64_OPND_TME_UIMM16:
     case AARCH64_OPND_SIMM5:
+    case AARCH64_OPND_SME_SHRIMM4:
+    case AARCH64_OPND_SME_SHRIMM5:
     case AARCH64_OPND_SVE_SHLIMM_PRED:
     case AARCH64_OPND_SVE_SHLIMM_UNPRED:
     case AARCH64_OPND_SVE_SHLIMM_UNPRED_22:
@@ -3512,7 +4150,10 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
     case AARCH64_OPND_SVE_IMM_ROT1:
     case AARCH64_OPND_SVE_IMM_ROT2:
     case AARCH64_OPND_SVE_IMM_ROT3:
-      snprintf (buf, size, "#%" PRIi64, opnd->imm.value);
+    case AARCH64_OPND_CSSC_SIMM8:
+    case AARCH64_OPND_CSSC_UIMM8:
+      snprintf (buf, size, "%s",
+		style_imm (styler, "#%" PRIi64, opnd->imm.value));
       break;
 
     case AARCH64_OPND_SVE_I1_HALF_ONE:
@@ -3521,7 +4162,7 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
       {
 	single_conv_t c;
 	c.i = opnd->imm.value;
-	snprintf (buf, size, "#%.1f", c.f);
+	snprintf (buf, size, "%s", style_imm (styler, "#%.1f", c.f));
 	break;
       }
 
@@ -3532,9 +4173,11 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
       enum_value = opnd->imm.value;
       assert (enum_value < ARRAY_SIZE (aarch64_sve_pattern_array));
       if (aarch64_sve_pattern_array[enum_value])
-	snprintf (buf, size, "%s", aarch64_sve_pattern_array[enum_value]);
+	snprintf (buf, size, "%s",
+		  style_reg (styler, aarch64_sve_pattern_array[enum_value]));
       else
-	snprintf (buf, size, "#%" PRIi64, opnd->imm.value);
+	snprintf (buf, size, "%s",
+		  style_imm (styler, "#%" PRIi64, opnd->imm.value));
       break;
 
     case AARCH64_OPND_SVE_PATTERN_SCALED:
@@ -3545,15 +4188,20 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
       enum_value = opnd->imm.value;
       assert (enum_value < ARRAY_SIZE (aarch64_sve_pattern_array));
       if (aarch64_sve_pattern_array[opnd->imm.value])
-	snprintf (buf, size, "%s", aarch64_sve_pattern_array[opnd->imm.value]);
+	snprintf (buf, size, "%s",
+		  style_reg (styler,
+			     aarch64_sve_pattern_array[opnd->imm.value]));
       else
-	snprintf (buf, size, "#%" PRIi64, opnd->imm.value);
+	snprintf (buf, size, "%s",
+		  style_imm (styler, "#%" PRIi64, opnd->imm.value));
       if (opnd->shifter.operator_present)
 	{
 	  size_t len = strlen (buf);
-	  snprintf (buf + len, size - len, ", %s #%" PRIi64,
-		    aarch64_operand_modifiers[opnd->shifter.kind].name,
-		    opnd->shifter.amount);
+	  const char *shift_name
+	    = aarch64_operand_modifiers[opnd->shifter.kind].name;
+	  snprintf (buf + len, size - len, ", %s %s",
+		    style_sub_mnem (styler, shift_name),
+		    style_imm (styler, "#%" PRIi64, opnd->shifter.amount));
 	}
       break;
 
@@ -3561,9 +4209,11 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
       enum_value = opnd->imm.value;
       assert (enum_value < ARRAY_SIZE (aarch64_sve_prfop_array));
       if (aarch64_sve_prfop_array[enum_value])
-	snprintf (buf, size, "%s", aarch64_sve_prfop_array[enum_value]);
+	snprintf (buf, size, "%s",
+		  style_reg (styler, aarch64_sve_prfop_array[enum_value]));
       else
-	snprintf (buf, size, "#%" PRIi64, opnd->imm.value);
+	snprintf (buf, size, "%s",
+		  style_imm (styler, "#%" PRIi64, opnd->imm.value));
       break;
 
     case AARCH64_OPND_IMM_MOV:
@@ -3572,12 +4222,15 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
 	case 4:	/* e.g. MOV Wd, #<imm32>.  */
 	    {
 	      int imm32 = opnd->imm.value;
-	      snprintf (buf, size, "#0x%-20x\t// #%d", imm32, imm32);
+	      snprintf (buf, size, "%s",
+			style_imm (styler, "#0x%-20x", imm32));
+	      snprintf (comment, comment_size, "#%d", imm32);
 	    }
 	  break;
 	case 8:	/* e.g. MOV Xd, #<imm64>.  */
-	  snprintf (buf, size, "#0x%-20" PRIx64 "\t// #%" PRIi64,
-		    opnd->imm.value, opnd->imm.value);
+	  snprintf (buf, size, "%s", style_imm (styler, "#0x%-20" PRIx64,
+						opnd->imm.value));
+	  snprintf (comment, comment_size, "#%" PRIi64, opnd->imm.value);
 	  break;
 	default:
 	  snprintf (buf, size, "<invalid>");
@@ -3586,7 +4239,7 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
       break;
 
     case AARCH64_OPND_FPIMM0:
-      snprintf (buf, size, "#0.0");
+      snprintf (buf, size, "%s", style_imm (styler, "#0.0"));
       break;
 
     case AARCH64_OPND_LIMM:
@@ -3596,30 +4249,38 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
     case AARCH64_OPND_SVE_LIMM:
     case AARCH64_OPND_SVE_LIMM_MOV:
       if (opnd->shifter.amount)
-	snprintf (buf, size, "#0x%" PRIx64 ", lsl #%" PRIi64, opnd->imm.value,
-		  opnd->shifter.amount);
+	snprintf (buf, size, "%s, %s %s",
+		  style_imm (styler, "#0x%" PRIx64, opnd->imm.value),
+		  style_sub_mnem (styler, "lsl"),
+		  style_imm (styler, "#%" PRIi64, opnd->shifter.amount));
       else
-	snprintf (buf, size, "#0x%" PRIx64, opnd->imm.value);
+	snprintf (buf, size, "%s",
+		  style_imm (styler, "#0x%" PRIx64, opnd->imm.value));
       break;
 
     case AARCH64_OPND_SIMD_IMM:
     case AARCH64_OPND_SIMD_IMM_SFT:
       if ((! opnd->shifter.amount && opnd->shifter.kind == AARCH64_MOD_LSL)
 	  || opnd->shifter.kind == AARCH64_MOD_NONE)
-	snprintf (buf, size, "#0x%" PRIx64, opnd->imm.value);
+	snprintf (buf, size, "%s",
+		  style_imm (styler, "#0x%" PRIx64, opnd->imm.value));
       else
-	snprintf (buf, size, "#0x%" PRIx64 ", %s #%" PRIi64, opnd->imm.value,
-		  aarch64_operand_modifiers[opnd->shifter.kind].name,
-		  opnd->shifter.amount);
+	snprintf (buf, size, "%s, %s %s",
+		  style_imm (styler, "#0x%" PRIx64, opnd->imm.value),
+		  style_sub_mnem (styler, aarch64_operand_modifiers[opnd->shifter.kind].name),
+		  style_imm (styler, "#%" PRIi64, opnd->shifter.amount));
       break;
 
     case AARCH64_OPND_SVE_AIMM:
     case AARCH64_OPND_SVE_ASIMM:
       if (opnd->shifter.amount)
-	snprintf (buf, size, "#%" PRIi64 ", lsl #%" PRIi64, opnd->imm.value,
-		  opnd->shifter.amount);
+	snprintf (buf, size, "%s, %s %s",
+		  style_imm (styler, "#%" PRIi64, opnd->imm.value),
+		  style_sub_mnem (styler, "lsl"),
+		  style_imm (styler, "#%" PRIi64, opnd->shifter.amount));
       else
-	snprintf (buf, size, "#%" PRIi64, opnd->imm.value);
+	snprintf (buf, size, "%s",
+		  style_imm (styler, "#%" PRIi64, opnd->imm.value));
       break;
 
     case AARCH64_OPND_FPIMM:
@@ -3631,21 +4292,21 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
 	    {
 	      half_conv_t c;
 	      c.i = expand_fp_imm (2, opnd->imm.value);
-	      snprintf (buf, size,  "#%.18e", c.f);
+	      snprintf (buf, size, "%s", style_imm (styler, "#%.18e", c.f));
 	    }
 	  break;
 	case 4:	/* e.g. FMOV <Vd>.4S, #<imm>.  */
 	    {
 	      single_conv_t c;
 	      c.i = expand_fp_imm (4, opnd->imm.value);
-	      snprintf (buf, size,  "#%.18e", c.f);
+	      snprintf (buf, size, "%s", style_imm (styler, "#%.18e", c.f));
 	    }
 	  break;
 	case 8:	/* e.g. FMOV <Sd>, #<imm>.  */
 	    {
 	      double_conv_t c;
 	      c.i = expand_fp_imm (8, opnd->imm.value);
-	      snprintf (buf, size,  "#%.18e", c.d);
+	      snprintf (buf, size, "%s", style_imm (styler, "#%.18e", c.d));
 	    }
 	  break;
 	default:
@@ -3666,21 +4327,23 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
 	      (int64_t) get_optional_operand_default_value (opcode)))
 	/* Omit the operand, e.g. DCPS1.  */
 	break;
-      snprintf (buf, size, "#0x%x", (unsigned int)opnd->imm.value);
+      snprintf (buf, size, "%s",
+		style_imm (styler, "#0x%x", (unsigned int) opnd->imm.value));
       break;
 
     case AARCH64_OPND_COND:
     case AARCH64_OPND_COND1:
-      snprintf (buf, size, "%s", opnd->cond->names[0]);
+      snprintf (buf, size, "%s",
+		style_sub_mnem (styler, opnd->cond->names[0]));
       num_conds = ARRAY_SIZE (opnd->cond->names);
       for (i = 1; i < num_conds && opnd->cond->names[i]; ++i)
 	{
-	  size_t len = strlen (buf);
+	  size_t len = comment != NULL ? strlen (comment) : 0;
 	  if (i == 1)
-	    snprintf (buf + len, size - len, "  // %s = %s",
+	    snprintf (comment + len, comment_size - len, "%s = %s",
 		      opnd->cond->names[0], opnd->cond->names[i]);
 	  else
-	    snprintf (buf + len, size - len, ", %s",
+	    snprintf (comment + len, comment_size - len, ", %s",
 		      opnd->cond->names[i]);
 	}
       break;
@@ -3696,7 +4359,7 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
 	 in the disassemble_info will take care of the printing.  But some
 	 other callers may be still interested in getting the string in *STR,
 	 so here we do snprintf regardless.  */
-      snprintf (buf, size, "#0x%" PRIx64, addr);
+      snprintf (buf, size, "%s", style_addr (styler, "#0x%" PRIx64 , addr));
       break;
 
     case AARCH64_OPND_ADDR_PCREL14:
@@ -3712,7 +4375,7 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
 	 in the disassemble_info will take care of the printing.  But some
 	 other callers may be still interested in getting the string in *STR,
 	 so here we do snprintf regardless.  */
-      snprintf (buf, size, "#0x%" PRIx64, addr);
+      snprintf (buf, size, "%s", style_addr (styler, "#0x%" PRIx64, addr));
       break;
 
     case AARCH64_OPND_ADDR_SIMPLE:
@@ -3722,12 +4385,16 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
       if (opnd->type == AARCH64_OPND_SIMD_ADDR_POST)
 	{
 	  if (opnd->addr.offset.is_reg)
-	    snprintf (buf, size, "[%s], x%d", name, opnd->addr.offset.regno);
+	    snprintf (buf, size, "[%s], %s",
+		      style_reg (styler, name),
+		      style_reg (styler, "x%d", opnd->addr.offset.regno));
 	  else
-	    snprintf (buf, size, "[%s], #%d", name, opnd->addr.offset.imm);
+	    snprintf (buf, size, "[%s], %s",
+		      style_reg (styler, name),
+		      style_imm (styler, "#%d", opnd->addr.offset.imm));
 	}
       else
-	snprintf (buf, size, "[%s]", name);
+	snprintf (buf, size, "[%s]", style_reg (styler, name));
       break;
 
     case AARCH64_OPND_ADDR_REGOFF:
@@ -3743,14 +4410,14 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
     case AARCH64_OPND_SVE_ADDR_RX_LSL3:
       print_register_offset_address
 	(buf, size, opnd, get_64bit_int_reg_name (opnd->addr.base_regno, 1),
-	 get_offset_int_reg_name (opnd));
+	 get_offset_int_reg_name (opnd), styler);
       break;
 
     case AARCH64_OPND_SVE_ADDR_ZX:
       print_register_offset_address
 	(buf, size, opnd,
 	 get_addr_sve_reg_name (opnd->addr.base_regno, opnd->qualifier),
-	 get_64bit_int_reg_name (opnd->addr.offset.regno, 0));
+	 get_64bit_int_reg_name (opnd->addr.offset.regno, 0), styler);
       break;
 
     case AARCH64_OPND_SVE_ADDR_RZ:
@@ -3767,7 +4434,8 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
     case AARCH64_OPND_SVE_ADDR_RZ_XTW3_22:
       print_register_offset_address
 	(buf, size, opnd, get_64bit_int_reg_name (opnd->addr.base_regno, 1),
-	 get_addr_sve_reg_name (opnd->addr.offset.regno, opnd->qualifier));
+	 get_addr_sve_reg_name (opnd->addr.offset.regno, opnd->qualifier),
+	 styler);
       break;
 
     case AARCH64_OPND_ADDR_SIMM7:
@@ -3791,7 +4459,8 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
     case AARCH64_OPND_SVE_ADDR_RI_U6x4:
     case AARCH64_OPND_SVE_ADDR_RI_U6x8:
       print_immediate_offset_address
-	(buf, size, opnd, get_64bit_int_reg_name (opnd->addr.base_regno, 1));
+	(buf, size, opnd, get_64bit_int_reg_name (opnd->addr.base_regno, 1),
+	 styler);
       break;
 
     case AARCH64_OPND_SVE_ADDR_ZI_U5:
@@ -3800,7 +4469,8 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
     case AARCH64_OPND_SVE_ADDR_ZI_U5x8:
       print_immediate_offset_address
 	(buf, size, opnd,
-	 get_addr_sve_reg_name (opnd->addr.base_regno, opnd->qualifier));
+	 get_addr_sve_reg_name (opnd->addr.base_regno, opnd->qualifier),
+	 styler);
       break;
 
     case AARCH64_OPND_SVE_ADDR_ZZ_LSL:
@@ -3809,15 +4479,18 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
       print_register_offset_address
 	(buf, size, opnd,
 	 get_addr_sve_reg_name (opnd->addr.base_regno, opnd->qualifier),
-	 get_addr_sve_reg_name (opnd->addr.offset.regno, opnd->qualifier));
+	 get_addr_sve_reg_name (opnd->addr.offset.regno, opnd->qualifier),
+	 styler);
       break;
 
     case AARCH64_OPND_ADDR_UIMM12:
       name = get_64bit_int_reg_name (opnd->addr.base_regno, 1);
       if (opnd->addr.offset.imm)
-	snprintf (buf, size, "[%s, #%d]", name, opnd->addr.offset.imm);
+	snprintf (buf, size, "[%s, %s]",
+		  style_reg (styler, name),
+		  style_imm (styler, "#%d", opnd->addr.offset.imm));
       else
-	snprintf (buf, size, "[%s]", name);
+	snprintf (buf, size, "[%s]", style_reg (styler, name));
       break;
 
     case AARCH64_OPND_SYSREG:
@@ -3856,14 +4529,16 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
 	}
 
       if (name)
-	snprintf (buf, size, "%s", name);
+	snprintf (buf, size, "%s", style_reg (styler, name));
       else
 	{
 	  /* Implementation defined system register.  */
 	  unsigned int value = opnd->sysreg.value;
-	  snprintf (buf, size, "s%u_%u_c%u_c%u_%u", (value >> 14) & 0x3,
-		    (value >> 11) & 0x7, (value >> 7) & 0xf, (value >> 3) & 0xf,
-		    value & 0x7);
+	  snprintf (buf, size, "%s",
+		    style_reg (styler, "s%u_%u_c%u_c%u_%u",
+			       (value >> 14) & 0x3, (value >> 11) & 0x7,
+			       (value >> 7) & 0xf, (value >> 3) & 0xf,
+			       value & 0x7));
 	}
       break;
 
@@ -3881,7 +4556,8 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
             break;
           }
       assert (aarch64_pstatefields[i].name);
-      snprintf (buf, size, "%s", aarch64_pstatefields[i].name);
+      snprintf (buf, size, "%s",
+		style_reg (styler, aarch64_pstatefields[i].name));
       break;
 
     case AARCH64_OPND_SYSREG_AT:
@@ -3889,12 +4565,18 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
     case AARCH64_OPND_SYSREG_IC:
     case AARCH64_OPND_SYSREG_TLBI:
     case AARCH64_OPND_SYSREG_SR:
-      snprintf (buf, size, "%s", opnd->sysins_op->name);
+      snprintf (buf, size, "%s", style_reg (styler, opnd->sysins_op->name));
       break;
 
     case AARCH64_OPND_BARRIER:
     case AARCH64_OPND_BARRIER_DSB_NXS:
-      snprintf (buf, size, "%s", opnd->barrier->name);
+      {
+	if (opnd->barrier->name[0] == '#')
+	  snprintf (buf, size, "%s", style_imm (styler, opnd->barrier->name));
+	else
+	  snprintf (buf, size, "%s",
+		    style_sub_mnem (styler, opnd->barrier->name));
+      }
       break;
 
     case AARCH64_OPND_BARRIER_ISB:
@@ -3902,34 +4584,64 @@ aarch64_print_operand (char *buf, size_t size, bfd_vma pc,
       if (! optional_operand_p (opcode, idx)
 	  || (opnd->barrier->value
 	      != get_optional_operand_default_value (opcode)))
-	snprintf (buf, size, "#0x%x", opnd->barrier->value);
+	snprintf (buf, size, "%s",
+		  style_imm (styler, "#0x%x", opnd->barrier->value));
       break;
 
     case AARCH64_OPND_PRFOP:
       if (opnd->prfop->name != NULL)
-	snprintf (buf, size, "%s", opnd->prfop->name);
+	snprintf (buf, size, "%s", style_sub_mnem (styler, opnd->prfop->name));
       else
-	snprintf (buf, size, "#0x%02x", opnd->prfop->value);
+	snprintf (buf, size, "%s", style_imm (styler, "#0x%02x",
+					      opnd->prfop->value));
+      break;
+
+    case AARCH64_OPND_RPRFMOP:
+      enum_value = opnd->imm.value;
+      if (enum_value < ARRAY_SIZE (aarch64_rprfmop_array)
+	  && aarch64_rprfmop_array[enum_value])
+	snprintf (buf, size, "%s",
+		  style_reg (styler, aarch64_rprfmop_array[enum_value]));
+      else
+	snprintf (buf, size, "%s",
+		  style_imm (styler, "#%" PRIi64, opnd->imm.value));
       break;
 
     case AARCH64_OPND_BARRIER_PSB:
-      snprintf (buf, size, "csync");
+      snprintf (buf, size, "%s", style_sub_mnem (styler, "csync"));
+      break;
+
+    case AARCH64_OPND_SME_ZT0:
+      snprintf (buf, size, "%s", style_reg (styler, "zt0"));
+      break;
+
+    case AARCH64_OPND_SME_ZT0_INDEX:
+      snprintf (buf, size, "%s[%s]", style_reg (styler, "zt0"),
+		style_imm (styler, "%d", (int) opnd->imm.value));
+      break;
+
+    case AARCH64_OPND_SME_ZT0_LIST:
+      snprintf (buf, size, "{%s}", style_reg (styler, "zt0"));
       break;
 
     case AARCH64_OPND_BTI_TARGET:
       if ((HINT_FLAG (opnd->hint_option->value) & HINT_OPD_F_NOPRINT) == 0)
-	snprintf (buf, size, "%s", opnd->hint_option->name);
+	snprintf (buf, size, "%s",
+		  style_sub_mnem (styler, opnd->hint_option->name));
       break;
 
     case AARCH64_OPND_MOPS_ADDR_Rd:
     case AARCH64_OPND_MOPS_ADDR_Rs:
       snprintf (buf, size, "[%s]!",
-		get_int_reg_name (opnd->reg.regno, AARCH64_OPND_QLF_X, 0));
+		style_reg (styler,
+			   get_int_reg_name (opnd->reg.regno,
+					     AARCH64_OPND_QLF_X, 0)));
       break;
 
     case AARCH64_OPND_MOPS_WB_Rn:
       snprintf (buf, size, "%s!",
-		get_int_reg_name (opnd->reg.regno, AARCH64_OPND_QLF_X, 0));
+		style_reg (styler, get_int_reg_name (opnd->reg.regno,
+						     AARCH64_OPND_QLF_X, 0)));
       break;
 
     default:
@@ -4848,6 +5560,15 @@ const aarch64_sys_reg aarch64_sys_regs [] =
   SR_CORE ("mfar_el3",      CPENC (3,6,C6,C0,5), 0),
   SR_CORE ("gpccr_el3",     CPENC (3,6,C2,C1,6), 0),
   SR_CORE ("gptbr_el3",     CPENC (3,6,C2,C1,4), 0),
+
+  SR_CORE ("mecidr_el2",    CPENC (3,4,C10,C8,7),  F_REG_READ),
+  SR_CORE ("mecid_p0_el2",  CPENC (3,4,C10,C8,0),  0),
+  SR_CORE ("mecid_a0_el2",  CPENC (3,4,C10,C8,1),  0),
+  SR_CORE ("mecid_p1_el2",  CPENC (3,4,C10,C8,2),  0),
+  SR_CORE ("mecid_a1_el2",  CPENC (3,4,C10,C8,3),  0),
+  SR_CORE ("vmecid_p_el2",  CPENC (3,4,C10,C9,0),  0),
+  SR_CORE ("vmecid_a_el2",  CPENC (3,4,C10,C9,1),  0),
+  SR_CORE ("mecid_rl_a_el3",CPENC (3,6,C10,C10,1), 0),
 
   SR_SME ("svcr",             CPENC (3,3,C4,C2,2),  0),
   SR_SME ("id_aa64smfr0_el1", CPENC (3,0,C0,C4,5),  F_REG_READ),
@@ -5887,6 +6608,31 @@ aarch64_sve_dupm_mov_immediate_p (uint64_t uvalue, int esize)
   if ((svalue & 0xff) == 0)
     svalue /= 256;
   return svalue < -128 || svalue >= 128;
+}
+
+/* Return true if a CPU with the AARCH64_FEATURE_* bits in CPU_VARIANT
+   supports the instruction described by INST.  */
+
+bool
+aarch64_cpu_supports_inst_p (uint64_t cpu_variant, aarch64_inst *inst)
+{
+  if (!inst->opcode->avariant
+      || !AARCH64_CPU_HAS_ALL_FEATURES (cpu_variant, *inst->opcode->avariant))
+    return false;
+
+  if (inst->opcode->iclass == sme_fp_sd
+      && inst->operands[0].qualifier == AARCH64_OPND_QLF_S_D
+      && !AARCH64_CPU_HAS_ALL_FEATURES (cpu_variant,
+					AARCH64_FEATURE_SME_F64F64))
+    return false;
+
+  if (inst->opcode->iclass == sme_int_sd
+      && inst->operands[0].qualifier == AARCH64_OPND_QLF_S_D
+      && !AARCH64_CPU_HAS_ALL_FEATURES (cpu_variant,
+					AARCH64_FEATURE_SME_I16I64))
+    return false;
+
+  return true;
 }
 
 /* Include the opcode description table as well as the operand description

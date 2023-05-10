@@ -1,6 +1,6 @@
 /* Top level stuff for GDB, the GNU debugger.
 
-   Copyright (C) 1986-2022 Free Software Foundation, Inc.
+   Copyright (C) 1986-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -19,6 +19,7 @@
 
 #include "defs.h"
 #include "top.h"
+#include "ui.h"
 #include "target.h"
 #include "inferior.h"
 #include "symfile.h"
@@ -56,10 +57,8 @@
 #include "observable.h"
 #include "serial.h"
 
-/* The selected interpreter.  This will be used as a set command
-   variable, so it should always be malloc'ed - since
-   do_setshow_command will free it.  */
-char *interpreter_p;
+/* The selected interpreter.  */
+std::string interpreter_p;
 
 /* System root path, used to find libraries etc.  */
 std::string gdb_sysroot;
@@ -412,6 +411,10 @@ start_event_loop ()
 	{
 	  result = gdb_do_one_event ();
 	}
+      catch (const gdb_exception_forced_quit &ex)
+	{
+	  throw;
+	}
       catch (const gdb_exception &ex)
 	{
 	  exception_print (gdb_stderr, ex);
@@ -519,6 +522,10 @@ catch_command_errors (catch_command_errors_const_ftype command,
       /* Do any commands attached to breakpoint we stopped at.  */
       if (do_bp_actions)
 	bpstat_do_actions ();
+    }
+  catch (const gdb_exception_forced_quit &e)
+    {
+      quit_force (NULL, 0);
     }
   catch (const gdb_exception &e)
     {
@@ -678,8 +685,9 @@ captured_main_1 (struct captured_main_args *context)
   main_ui = new ui (stdin, stdout, stderr);
   current_ui = main_ui;
 
-  gdb_stdtargerr = gdb_stderr;	/* for moment */
-  gdb_stdtargin = gdb_stdin;	/* for moment */
+  gdb_stdtarg = gdb_stderr;
+  gdb_stdtargerr = gdb_stderr;
+  gdb_stdtargin = gdb_stdin;
 
   if (bfd_init () != BFD_INIT_MAGIC)
     error (_("fatal error: libbfd ABI mismatch"));
@@ -729,7 +737,7 @@ captured_main_1 (struct captured_main_args *context)
      this captured main, or one specified by the user at start up, or
      the console.  Initialize the interpreter to the one requested by 
      the application.  */
-  interpreter_p = xstrdup (context->interpreter_p);
+  interpreter_p = context->interpreter_p;
 
   /* Parse arguments and options.  */
   {
@@ -866,8 +874,7 @@ captured_main_1 (struct captured_main_args *context)
 	  case OPT_TUI:
 	    /* --tui is equivalent to -i=tui.  */
 #ifdef TUI
-	    xfree (interpreter_p);
-	    interpreter_p = xstrdup (INTERP_TUI);
+	    interpreter_p = INTERP_TUI;
 #else
 	    error (_("%s: TUI mode is not supported"), gdb_program_name);
 #endif
@@ -877,14 +884,12 @@ captured_main_1 (struct captured_main_args *context)
 	       actually useful, and if it is, what it should do.  */
 #ifdef GDBTK
 	    /* --windows is equivalent to -i=insight.  */
-	    xfree (interpreter_p);
-	    interpreter_p = xstrdup (INTERP_INSIGHT);
+	    interpreter_p = INTERP_INSIGHT;
 #endif
 	    break;
 	  case OPT_NOWINDOWS:
 	    /* -nw is equivalent to -i=console.  */
-	    xfree (interpreter_p);
-	    interpreter_p = xstrdup (INTERP_CONSOLE);
+	    interpreter_p = INTERP_CONSOLE;
 	    break;
 	  case 'f':
 	    annotation_level = 1;
@@ -950,8 +955,7 @@ captured_main_1 (struct captured_main_args *context)
 	    }
 #endif /* GDBTK */
 	  case 'i':
-	    xfree (interpreter_p);
-	    interpreter_p = xstrdup (optarg);
+	    interpreter_p = optarg;
 	    break;
 	  case 'd':
 	    dirarg.push_back (optarg);
@@ -1061,7 +1065,8 @@ captured_main_1 (struct captured_main_args *context)
       symarg = argv[optind];
       execarg = argv[optind];
       ++optind;
-      set_inferior_args_vector (argc - optind, &argv[optind]);
+      current_inferior ()->set_args
+	(gdb::array_view<char * const> (&argv[optind], argc - optind));
     }
   else
     {
@@ -1129,31 +1134,11 @@ captured_main_1 (struct captured_main_args *context)
       exit (0);
     }
 
-  /* FIXME: cagney/2003-02-03: The big hack (part 1 of 2) that lets
-     GDB retain the old MI1 interpreter startup behavior.  Output the
-     copyright message before the interpreter is installed.  That way
-     it isn't encapsulated in MI output.  */
-  if (!quiet && strcmp (interpreter_p, INTERP_MI1) == 0)
-    {
-      /* Print all the junk at the top, with trailing "..." if we are
-	 about to read a symbol file (possibly slowly).  */
-      print_gdb_version (gdb_stdout, true);
-      if (symarg)
-	gdb_printf ("..");
-      gdb_printf ("\n");
-      gdb_flush (gdb_stdout);	/* Force to screen during slow
-				   operations.  */
-    }
-
   /* Install the default UI.  All the interpreters should have had a
      look at things by now.  Initialize the default interpreter.  */
-  set_top_level_interpreter (interpreter_p);
+  set_top_level_interpreter (interpreter_p.c_str ());
 
-  /* FIXME: cagney/2003-02-03: The big hack (part 2 of 2) that lets
-     GDB retain the old MI1 interpreter startup behavior.  Output the
-     copyright message after the interpreter is installed when it is
-     any sane interpreter.  */
-  if (!quiet && !current_interp_named_p (INTERP_MI1))
+  if (!quiet)
     {
       /* Print all the junk at the top, with trailing "..." if we are
 	 about to read a symbol file (possibly slowly).  */
@@ -1333,6 +1318,10 @@ captured_main (void *data)
       try
 	{
 	  captured_command_loop ();
+	}
+      catch (const gdb_exception_forced_quit &ex)
+	{
+	  quit_force (NULL, 0);
 	}
       catch (const gdb_exception &ex)
 	{

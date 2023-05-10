@@ -1,5 +1,5 @@
 /* Common things used by the various darwin files
-   Copyright (C) 1995-2022 Free Software Foundation, Inc.
+   Copyright (C) 1995-2023 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -154,7 +154,7 @@ struct darwin_exception_info
 static inline darwin_thread_info *
 get_darwin_thread_info (class thread_info *thread)
 {
-  return static_cast<darwin_thread_info *> (thread->priv.get ());
+  return gdb::checked_static_cast<darwin_thread_info *> (thread->priv.get ());
 }
 
 /* Describe an inferior.  */
@@ -188,7 +188,7 @@ struct darwin_inferior : public private_inferior
 static inline darwin_inferior *
 get_darwin_inferior (inferior *inf)
 {
-  return static_cast<darwin_inferior *> (inf->priv.get ());
+  return gdb::checked_static_cast<darwin_inferior *> (inf->priv.get ());
 }
 
 /* Exception port.  */

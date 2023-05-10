@@ -1,6 +1,6 @@
 /* Serial interface for local (hardwired) serial ports on Un*x like systems
 
-   Copyright (C) 1992-2022 Free Software Foundation, Inc.
+   Copyright (C) 1992-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -328,6 +328,72 @@ baudtab[] =
   }
   ,
 #endif
+#ifdef B500000
+  {
+    500000, B500000
+  }
+  ,
+#endif
+#ifdef B576000
+  {
+    576000, B576000
+  }
+  ,
+#endif
+#ifdef B921600
+  {
+    921600, B921600
+  }
+  ,
+#endif
+#ifdef B1000000
+  {
+    1000000, B1000000
+  }
+  ,
+#endif
+#ifdef B1152000
+  {
+    1152000, B1152000
+  }
+  ,
+#endif
+#ifdef B1500000
+  {
+    1500000, B1500000
+  }
+  ,
+#endif
+#ifdef B2000000
+  {
+    2000000, B2000000
+  }
+  ,
+#endif
+#ifdef B2500000
+  {
+    2500000, B2500000
+  }
+  ,
+#endif
+#ifdef B3000000
+  {
+    3000000, B3000000
+  }
+  ,
+#endif
+#ifdef B3500000
+  {
+    3500000, B3500000
+  }
+  ,
+#endif
+#ifdef B4000000
+  {
+    4000000, B4000000
+  }
+  ,
+#endif
   {
     -1, -1
   }
@@ -447,8 +513,7 @@ hardwire_setparity (struct serial *scb, int parity)
       newparity = PARENB;
       break;
     default:
-      internal_warning (__FILE__, __LINE__,
-			"Incorrect parity value: %d", parity);
+      internal_warning ("Incorrect parity value: %d", parity);
       return -1;
     }
 

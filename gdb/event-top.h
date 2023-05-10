@@ -1,6 +1,6 @@
 /* Definitions used by event-top.c, for GDB, the GNU debugger.
 
-   Copyright (C) 1999-2022 Free Software Foundation, Inc.
+   Copyright (C) 1999-2023 Free Software Foundation, Inc.
 
    Written by Elena Zannoni <ezannoni@cygnus.com> of Cygnus Solutions.
 
@@ -45,7 +45,6 @@ extern void handle_sigtstp (int sig);
 extern void handle_sigint (int sig);
 extern void handle_sigterm (int sig);
 extern void async_request_quit (void *arg);
-extern void stdin_event_handler (int error, void *client_data);
 extern void async_disable_stdin (void);
 extern void async_enable_stdin (void);
 

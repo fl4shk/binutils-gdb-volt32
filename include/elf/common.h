@@ -1,5 +1,5 @@
 /* ELF support for BFD.
-   Copyright (C) 1991-2022 Free Software Foundation, Inc.
+   Copyright (C) 1991-2023 Free Software Foundation, Inc.
 
    Written by Fred Fish @ Cygnus Support, from information published
    in "UNIX System V Release 4, Programmers Guide: ANSI C and
@@ -492,8 +492,10 @@
 #define PT_GNU_STACK	(PT_LOOS + 0x474e551) /* Stack flags */
 #define PT_GNU_RELRO	(PT_LOOS + 0x474e552) /* Read-only after relocation */
 #define PT_GNU_PROPERTY	(PT_LOOS + 0x474e553) /* GNU property */
+#define PT_GNU_SFRAME	(PT_LOOS + 0x474e554) /* SFrame stack trace information */
 
 /* OpenBSD segment types.  */
+#define PT_OPENBSD_MUTABLE   (PT_LOOS + 0x5a3dbe5)  /* Like bss, but not immutable.  */
 #define PT_OPENBSD_RANDOMIZE (PT_LOOS + 0x5a3dbe6)  /* Fill with random data.  */
 #define PT_OPENBSD_WXNEEDED  (PT_LOOS + 0x5a3dbe7)  /* Program does W^X violations.  */
 #define PT_OPENBSD_BOOTDATA  (PT_LOOS + 0x5a41be6)  /* Section for boot arguments.  */
@@ -591,6 +593,8 @@
 
 /* Compression types.  */
 #define ELFCOMPRESS_ZLIB   1		/* Compressed with zlib.  */
+#define ELFCOMPRESS_ZSTD   2		/* Compressed with zstd  */
+					/* (see http://www.zstandard.org). */
 #define ELFCOMPRESS_LOOS   0x60000000	/* OS-specific semantics, lo */
 #define ELFCOMPRESS_HIOS   0x6FFFFFFF	/* OS-specific semantics, hi */
 #define ELFCOMPRESS_LOPROC 0x70000000	/* Processor-specific semantics, lo */
@@ -696,6 +700,10 @@
 #define NT_ARM_PAC_ENABLED_KEYS	0x40a	/* AArch64 pointer authentication
 					   enabled keys (prctl()) */
 					/*   note name must be "LINUX".  */
+#define NT_ARM_SSVE     0x40b        	/* AArch64 SME streaming SVE registers.  */
+					/*   Note: name must be "LINUX".  */
+#define NT_ARM_ZA       0x40c           /* AArch64 SME ZA register.  */
+					/*   Note: name must be "LINUX".  */
 #define NT_ARC_V2	0x600		/* ARC HS accumulator/extra registers.  */
 					/*   note name must be "LINUX".  */
 #define NT_LARCH_CPUCFG 0xa00		/* LoongArch CPU config registers */
@@ -764,6 +772,19 @@
 #define NT_OPENBSD_XFPREGS	22
 #define NT_OPENBSD_WCOOKIE	23
 
+/* Note segments for core files on QNX systems.  Note name
+   must start with "QNX".  */
+#define QNT_DEBUG_FULLPATH 1
+#define QNT_DEBUG_RELOC    2
+#define QNT_STACK          3
+#define QNT_GENERATOR      4
+#define QNT_DEFAULT_LIB    5
+#define QNT_CORE_SYSINFO   6
+#define QNT_CORE_INFO      7
+#define QNT_CORE_STATUS    8
+#define QNT_CORE_GREG      9
+#define QNT_CORE_FPREG     10
+#define QNT_LINK_MAP       11
 
 /* Note segments for core files on Solaris systems.  Note name
    must start with "CORE".  */
@@ -1406,6 +1427,8 @@
 #define AT_FREEBSD_PS_STRINGS   32      /* struct ps_strings. */
 #define AT_FREEBSD_FXRNG        33      /* Pointer to root RNG seed version. */
 #define AT_FREEBSD_KPRELOAD     34      /* Base of vdso. */
+#define AT_FREEBSD_USRSTACKBASE 35      /* Top of user stack. */
+#define AT_FREEBSD_USRSTACKLIM  36      /* Grow limit of user stack. */
 
 #define AT_SUN_UID      2000    /* Effective user ID.  */
 #define AT_SUN_RUID     2001    /* Real user ID.  */

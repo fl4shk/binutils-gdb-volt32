@@ -1,5 +1,5 @@
 /* Helper routines for C++ support in GDB.
-   Copyright (C) 2002-2022 Free Software Foundation, Inc.
+   Copyright (C) 2002-2023 Free Software Foundation, Inc.
 
    Contributed by MontaVista Software.
 
@@ -20,6 +20,7 @@
 
 #include "defs.h"
 #include "cp-support.h"
+#include "language.h"
 #include "demangle.h"
 #include "gdbcmd.h"
 #include "dictionary.h"
@@ -35,7 +36,7 @@
 #include "namespace.h"
 #include <signal.h>
 #include "gdbsupport/gdb_setjmp.h"
-#include "safe-ctype.h"
+#include "gdbsupport/gdb-safe-ctype.h"
 #include "gdbsupport/selftest.h"
 #include "gdbsupport/gdb-sigmask.h"
 #include <atomic>
@@ -212,10 +213,10 @@ inspect_type (struct demangle_parse_info *info,
 	      struct type *last = otype;
 
 	      /* Find the last typedef for the type.  */
-	      while (TYPE_TARGET_TYPE (last) != NULL
-		     && (TYPE_TARGET_TYPE (last)->code ()
+	      while (last->target_type () != NULL
+		     && (last->target_type ()->code ()
 			 == TYPE_CODE_TYPEDEF))
-		last = TYPE_TARGET_TYPE (last);
+		last = last->target_type ();
 
 	      /* If there is only one typedef for this anonymous type,
 		 do not substitute it.  */
@@ -1273,12 +1274,9 @@ add_symbol_overload_list_block (const char *name,
 				const struct block *block,
 				std::vector<symbol *> *overload_list)
 {
-  struct block_iterator iter;
-  struct symbol *sym;
-
   lookup_name_info lookup_name (name, symbol_name_match_type::FULL);
 
-  ALL_BLOCK_SYMBOLS_WITH_NAME (block, lookup_name, iter, sym)
+  for (struct symbol *sym : block_iterator_range (block, &lookup_name))
     overload_list_add_symbol (sym, name, overload_list);
 }
 
@@ -1306,15 +1304,17 @@ add_symbol_overload_list_namespace (const char *func_name,
     }
 
   /* Look in the static block.  */
-  block = block_static_block (get_selected_block (0));
-  if (block)
-    add_symbol_overload_list_block (name, block, overload_list);
+  block = get_selected_block (0);
+  block = block == nullptr ? nullptr : block->static_block ();
+  if (block != nullptr)
+    {
+      add_symbol_overload_list_block (name, block, overload_list);
 
-  /* Look in the global block.  */
-  block = block_global_block (block);
-  if (block)
-    add_symbol_overload_list_block (name, block, overload_list);
-
+      /* Look in the global block.  */
+      block = block->global_block ();
+      if (block)
+	add_symbol_overload_list_block (name, block, overload_list);
+    }
 }
 
 /* Search the namespace of the given type and namespace of and public
@@ -1336,7 +1336,7 @@ add_symbol_overload_list_adl_namespace (struct type *type,
       if (type->code () == TYPE_CODE_TYPEDEF)
 	type = check_typedef (type);
       else
-	type = TYPE_TARGET_TYPE (type);
+	type = type->target_type ();
     }
 
   type_name = type->name ();
@@ -1400,7 +1400,7 @@ add_symbol_overload_list_using (const char *func_name,
   for (block = get_selected_block (0);
        block != NULL;
        block = block->superblock ())
-    for (current = block_using (block);
+    for (current = block->get_using ();
 	current != NULL;
 	current = current->next)
       {
@@ -1455,35 +1455,38 @@ add_symbol_overload_list_qualified (const char *func_name,
        b = b->superblock ())
     add_symbol_overload_list_block (func_name, b, overload_list);
 
-  surrounding_static_block = block_static_block (get_selected_block (0));
+  surrounding_static_block = get_selected_block (0);
+  surrounding_static_block = (surrounding_static_block == nullptr
+			      ? nullptr
+			      : surrounding_static_block->static_block ());
 
   /* Go through the symtabs and check the externs and statics for
      symbols which match.  */
 
-  for (objfile *objfile : current_program_space->objfiles ())
-    {
-      for (compunit_symtab *cust : objfile->compunits ())
-	{
-	  QUIT;
-	  const block *b = cust->blockvector ()->global_block ();
-	  add_symbol_overload_list_block (func_name, b, overload_list);
-	}
-    }
+  const block *block = get_selected_block (0);
+  struct objfile *current_objfile = block ? block->objfile () : nullptr;
 
-  for (objfile *objfile : current_program_space->objfiles ())
-    {
-      for (compunit_symtab *cust : objfile->compunits ())
-	{
-	  QUIT;
-	  const block *b = cust->blockvector ()->static_block ();
+  gdbarch_iterate_over_objfiles_in_search_order
+    (current_objfile ? current_objfile->arch () : target_gdbarch (),
+     [func_name, surrounding_static_block, &overload_list]
+     (struct objfile *obj)
+       {
+	 for (compunit_symtab *cust : obj->compunits ())
+	   {
+	     QUIT;
+	     const struct block *b = cust->blockvector ()->global_block ();
+	     add_symbol_overload_list_block (func_name, b, overload_list);
 
-	  /* Don't do this block twice.  */
-	  if (b == surrounding_static_block)
-	    continue;
+	     b = cust->blockvector ()->static_block ();
+	     /* Don't do this block twice.  */
+	     if (b == surrounding_static_block)
+	       continue;
 
-	  add_symbol_overload_list_block (func_name, b, overload_list);
-	}
-    }
+	     add_symbol_overload_list_block (func_name, b, overload_list);
+	   }
+
+	 return 0;
+       }, current_objfile);
 }
 
 /* Lookup the rtti type for a class name.  */
@@ -1773,6 +1776,8 @@ cp_symbol_name_matches_1 (const char *symbol_search_name,
   completion_match_for_lcd *match_for_lcd
     = (comp_match_res != NULL ? &comp_match_res->match_for_lcd : NULL);
 
+  gdb_assert (match_for_lcd == nullptr || match_for_lcd->empty ());
+
   while (true)
     {
       if (strncmp_iw_with_mode (sname, lookup_name, lookup_name_len,
@@ -1805,6 +1810,11 @@ cp_symbol_name_matches_1 (const char *symbol_search_name,
 	    }
 	  return true;
 	}
+
+      /* Clear match_for_lcd so the next strncmp_iw_with_mode call starts
+	 from scratch.  */
+      if (match_for_lcd != nullptr)
+	match_for_lcd->clear ();
 
       unsigned int len = cp_find_first_component (sname);
 

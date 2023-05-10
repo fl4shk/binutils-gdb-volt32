@@ -1,6 +1,6 @@
 /* Native-dependent code for NetBSD.
 
-   Copyright (C) 2006-2022 Free Software Foundation, Inc.
+   Copyright (C) 2006-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -25,6 +25,7 @@
 #include "netbsd-tdep.h"
 #include "inferior.h"
 #include "gdbarch.h"
+#include "gdbsupport/buildargv.h"
 
 #include <sys/types.h>
 #include <sys/ptrace.h>
@@ -259,7 +260,7 @@ nbsd_nat_target::find_memory_regions (find_memory_region_ftype func,
 	 Pass MODIFIED as true, we do not know the real modification state.  */
       func (kve->kve_start, size, kve->kve_protection & KVME_PROT_READ,
 	    kve->kve_protection & KVME_PROT_WRITE,
-	    kve->kve_protection & KVME_PROT_EXEC, 1, data);
+	    kve->kve_protection & KVME_PROT_EXEC, 1, false, data);
     }
   return 0;
 }
@@ -617,7 +618,7 @@ nbsd_nat_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
 	 threads might be skipped during post_attach that
 	 have not yet reported their PTRACE_LWP_EXIT event.
 	 Ignore exited events for an unknown LWP.  */
-      thread_info *thr = find_thread_ptid (this, wptid);
+      thread_info *thr = this->find_thread (wptid);
       if (thr == nullptr)
 	  ourstatus->set_spurious ();
       else

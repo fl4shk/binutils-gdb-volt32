@@ -1,5 +1,5 @@
 /* IA-64 support for OpenVMS
-   Copyright (C) 1998-2022 Free Software Foundation, Inc.
+   Copyright (C) 1998-2023 Free Software Foundation, Inc.
 
    This file is part of BFD, the Binary File Descriptor library.
 
@@ -370,8 +370,9 @@ elf64_ia64_relax_section (bfd *abfd, asection *sec,
 
   /* Nothing to do if there are no relocations or there is no need for
      the current pass.  */
-  if ((sec->flags & SEC_RELOC) == 0
-      || sec->reloc_count == 0
+  if (sec->reloc_count == 0
+      || (sec->flags & SEC_RELOC) == 0
+      || (sec->flags & SEC_HAS_CONTENTS) == 0
       || (link_info->relax_pass == 0 && sec->skip_relax_pass_0)
       || (link_info->relax_pass == 1 && sec->skip_relax_pass_1))
     return true;
@@ -4845,7 +4846,7 @@ elf64_vms_link_add_object_symbols (bfd *abfd, struct bfd_link_info *info)
 	}
 
       for (extdyn = dynbuf;
-	   extdyn < dynbuf + s->size;
+	   (size_t) (dynbuf + s->size - extdyn) >= bed->s->sizeof_dyn;
 	   extdyn += bed->s->sizeof_dyn)
 	{
 	  Elf_Internal_Dyn dyn;

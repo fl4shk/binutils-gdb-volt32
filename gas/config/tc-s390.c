@@ -1,5 +1,5 @@
 /* tc-s390.c -- Assemble for the S390
-   Copyright (C) 2000-2022 Free Software Foundation, Inc.
+   Copyright (C) 2000-2023 Free Software Foundation, Inc.
    Contributed by Martin Schwidefsky (schwidefsky@de.ibm.com).
 
    This file is part of GAS, the GNU Assembler.
@@ -584,7 +584,7 @@ md_begin (void)
 
 /* Called after all assembly has been done.  */
 void
-s390_md_end (void)
+s390_md_finish (void)
 {
   if (s390_arch_size == 64)
     bfd_set_arch_mach (stdoutput, bfd_arch_s390, bfd_mach_s390_64);

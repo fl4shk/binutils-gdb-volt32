@@ -1,6 +1,6 @@
 /* MI Command Set.
 
-   Copyright (C) 2000-2022 Free Software Foundation, Inc.
+   Copyright (C) 2000-2023 Free Software Foundation, Inc.
 
    Contributed by Cygnus Solutions (a Red Hat company).
 
@@ -25,6 +25,7 @@
 #include "inferior.h"
 #include "infrun.h"
 #include "top.h"
+#include "ui.h"
 #include "gdbthread.h"
 #include "mi-cmds.h"
 #include "mi-parse.h"
@@ -40,7 +41,7 @@
 #include "regcache.h"
 #include "frame.h"
 #include "mi-main.h"
-#include "mi-common.h"
+#include "mi-interp.h"
 #include "language.h"
 #include "valprint.h"
 #include "osdata.h"
@@ -95,7 +96,7 @@ static void mi_execute_async_cli_command (const char *cli_command,
 					  char **argv, int argc);
 static bool register_changed_p (int regnum, readonly_detached_regcache *,
 			       readonly_detached_regcache *);
-static void output_register (struct frame_info *, int regnum, int format,
+static void output_register (frame_info_ptr, int regnum, int format,
 			     int skip_unavailable);
 
 /* Controls whether the frontend wants MI in async mode.  */
@@ -880,8 +881,7 @@ mi_cmd_data_list_register_names (const char *command, char **argv, int argc)
 	   regnum < numregs;
 	   regnum++)
 	{
-	  if (gdbarch_register_name (gdbarch, regnum) == NULL
-	      || *(gdbarch_register_name (gdbarch, regnum)) == '\0')
+	  if (*(gdbarch_register_name (gdbarch, regnum)) == '\0')
 	    uiout->field_string (NULL, "");
 	  else
 	    uiout->field_string (NULL, gdbarch_register_name (gdbarch, regnum));
@@ -895,8 +895,7 @@ mi_cmd_data_list_register_names (const char *command, char **argv, int argc)
       if (regnum < 0 || regnum >= numregs)
 	error (_("bad register number"));
 
-      if (gdbarch_register_name (gdbarch, regnum) == NULL
-	  || *(gdbarch_register_name (gdbarch, regnum)) == '\0')
+      if (*(gdbarch_register_name (gdbarch, regnum)) == '\0')
 	uiout->field_string (NULL, "");
       else
 	uiout->field_string (NULL, gdbarch_register_name (gdbarch, regnum));
@@ -940,8 +939,7 @@ mi_cmd_data_list_changed_registers (const char *command, char **argv, int argc)
 	   regnum < numregs;
 	   regnum++)
 	{
-	  if (gdbarch_register_name (gdbarch, regnum) == NULL
-	      || *(gdbarch_register_name (gdbarch, regnum)) == '\0')
+	  if (*(gdbarch_register_name (gdbarch, regnum)) == '\0')
 	    continue;
 
 	  if (register_changed_p (regnum, prev_regs.get (),
@@ -957,7 +955,6 @@ mi_cmd_data_list_changed_registers (const char *command, char **argv, int argc)
 
       if (regnum >= 0
 	  && regnum < numregs
-	  && gdbarch_register_name (gdbarch, regnum) != NULL
 	  && *gdbarch_register_name (gdbarch, regnum) != '\000')
 	{
 	  if (register_changed_p (regnum, prev_regs.get (),
@@ -987,8 +984,8 @@ register_changed_p (int regnum, readonly_detached_regcache *prev_regs,
   gdb_assert (prev_value != NULL);
   gdb_assert (this_value != NULL);
 
-  auto ret = !value_contents_eq (prev_value, 0, this_value, 0,
-				 register_size (gdbarch, regnum));
+  auto ret = !prev_value->contents_eq (0, this_value, 0,
+				       register_size (gdbarch, regnum));
 
   release_value (prev_value);
   release_value (this_value);
@@ -1008,7 +1005,7 @@ void
 mi_cmd_data_list_register_values (const char *command, char **argv, int argc)
 {
   struct ui_out *uiout = current_uiout;
-  struct frame_info *frame;
+  frame_info_ptr frame;
   struct gdbarch *gdbarch;
   int regnum, numregs, format;
   int i;
@@ -1067,8 +1064,7 @@ mi_cmd_data_list_register_values (const char *command, char **argv, int argc)
 	   regnum < numregs;
 	   regnum++)
 	{
-	  if (gdbarch_register_name (gdbarch, regnum) == NULL
-	      || *(gdbarch_register_name (gdbarch, regnum)) == '\0')
+	  if (*(gdbarch_register_name (gdbarch, regnum)) == '\0')
 	    continue;
 
 	  output_register (frame, regnum, format, skip_unavailable);
@@ -1082,7 +1078,6 @@ mi_cmd_data_list_register_values (const char *command, char **argv, int argc)
 
       if (regnum >= 0
 	  && regnum < numregs
-	  && gdbarch_register_name (gdbarch, regnum) != NULL
 	  && *gdbarch_register_name (gdbarch, regnum) != '\000')
 	output_register (frame, regnum, format, skip_unavailable);
       else
@@ -1095,14 +1090,14 @@ mi_cmd_data_list_register_values (const char *command, char **argv, int argc)
    unavailable.  */
 
 static void
-output_register (struct frame_info *frame, int regnum, int format,
+output_register (frame_info_ptr frame, int regnum, int format,
 		 int skip_unavailable)
 {
   struct ui_out *uiout = current_uiout;
   struct value *val = value_of_register (regnum, frame);
   struct value_print_options opts;
 
-  if (skip_unavailable && !value_entirely_available (val))
+  if (skip_unavailable && !val->entirely_available ())
     return;
 
   ui_out_emit_tuple tuple_emitter (uiout, NULL);
@@ -1117,7 +1112,7 @@ output_register (struct frame_info *frame, int regnum, int format,
   string_file stb;
 
   get_formatted_print_options (&opts, format);
-  opts.deref_ref = 1;
+  opts.deref_ref = true;
   common_val_print (val, &stb, 0, &opts, current_language);
   uiout->field_stream ("value", stb);
 }
@@ -1163,8 +1158,7 @@ mi_cmd_data_write_register_values (const char *command, char **argv, int argc)
       int regnum = atoi (argv[i]);
 
       if (regnum >= 0 && regnum < numregs
-	  && gdbarch_register_name (gdbarch, regnum)
-	  && *gdbarch_register_name (gdbarch, regnum))
+	  && *gdbarch_register_name (gdbarch, regnum) != '\0')
 	{
 	  LONGEST value;
 
@@ -1196,13 +1190,13 @@ mi_cmd_data_evaluate_expression (const char *command, char **argv, int argc)
 
   expression_up expr = parse_expression (argv[0]);
 
-  val = evaluate_expression (expr.get ());
+  val = expr->evaluate ();
 
   string_file stb;
 
   /* Print the result of the expression evaluation.  */
   get_user_print_options (&opts);
-  opts.deref_ref = 0;
+  opts.deref_ref = false;
   common_val_print (val, &stb, 0, &opts, current_language);
 
   uiout->field_stream ("value", stb);
@@ -1663,6 +1657,7 @@ mi_cmd_list_features (const char *command, char **argv, int argc)
       uiout->field_string (NULL, "undefined-command-error-code");
       uiout->field_string (NULL, "exec-run-start-option");
       uiout->field_string (NULL, "data-disassemble-a-option");
+      uiout->field_string (NULL, "simple-values-ref-types");
 
       if (ext_lang_initialized_p (get_ext_lang_defn (EXT_LANG_PYTHON)))
 	uiout->field_string (NULL, "python");
@@ -1863,9 +1858,9 @@ captured_mi_execute_command (struct ui_out *uiout, struct mi_parse *context)
 
 	/* If we changed interpreters, DON'T print out anything.  */
 	if (current_interp_named_p (INTERP_MI)
-	    || current_interp_named_p (INTERP_MI1)
 	    || current_interp_named_p (INTERP_MI2)
-	    || current_interp_named_p (INTERP_MI3))
+	    || current_interp_named_p (INTERP_MI3)
+	    || current_interp_named_p (INTERP_MI4))
 	  {
 	    if (!running_result_record_printed)
 	      {
@@ -1959,6 +1954,10 @@ mi_execute_command (const char *cmd, int from_tty)
 	     somewhere.  */
 	  mi_print_exception (command->token, result);
 	  mi_out_rewind (current_uiout);
+
+	  /* Throw to a higher level catch for SIGTERM sent to GDB.  */
+	  if (result.reason == RETURN_FORCED_QUIT)
+	    throw;
 	}
 
       bpstat_do_actions ();
@@ -2003,7 +2002,7 @@ struct user_selected_context
        reports not-equal, we only do the equality test if we have something
        other than the innermost frame selected.  */
     if (current_frame_level != -1
-	&& !frame_id_eq (current_frame_id, m_previous_frame_id))
+	&& current_frame_id != m_previous_frame_id)
       return true;
 
     /* Nothing changed!  */
@@ -2083,7 +2082,7 @@ mi_cmd_execute (struct mi_parse *parse)
   gdb::optional<scoped_restore_selected_frame> frame_saver;
   if (parse->frame != -1)
     {
-      struct frame_info *fid;
+      frame_info_ptr fid;
       int frame = parse->frame;
 
       fid = find_relative_frame (get_current_frame (), &frame);
@@ -2461,7 +2460,6 @@ static void
 print_variable_or_computed (const char *expression, enum print_values values)
 {
   struct value *val;
-  struct type *type;
   struct ui_out *uiout = current_uiout;
 
   string_file stb;
@@ -2469,9 +2467,9 @@ print_variable_or_computed (const char *expression, enum print_values values)
   expression_up expr = parse_expression (expression);
 
   if (values == PRINT_SIMPLE_VALUES)
-    val = evaluate_type (expr.get ());
+    val = expr->evaluate_type ();
   else
-    val = evaluate_expression (expr.get ());
+    val = expr->evaluate ();
 
   gdb::optional<ui_out_emit_tuple> tuple_emitter;
   if (values != PRINT_NO_VALUES)
@@ -2481,17 +2479,14 @@ print_variable_or_computed (const char *expression, enum print_values values)
   switch (values)
     {
     case PRINT_SIMPLE_VALUES:
-      type = check_typedef (value_type (val));
-      type_print (value_type (val), "", &stb, -1);
+      type_print (val->type (), "", &stb, -1);
       uiout->field_stream ("type", stb);
-      if (type->code () != TYPE_CODE_ARRAY
-	  && type->code () != TYPE_CODE_STRUCT
-	  && type->code () != TYPE_CODE_UNION)
+      if (mi_simple_type_p (val->type ()))
 	{
 	  struct value_print_options opts;
 
 	  get_no_prettyformat_print_options (&opts);
-	  opts.deref_ref = 1;
+	  opts.deref_ref = true;
 	  common_val_print (val, &stb, 0, &opts, current_language);
 	  uiout->field_stream ("value", stb);
 	}
@@ -2501,7 +2496,7 @@ print_variable_or_computed (const char *expression, enum print_values values)
 	struct value_print_options opts;
 
 	get_no_prettyformat_print_options (&opts);
-	opts.deref_ref = 1;
+	opts.deref_ref = true;
 	common_val_print (val, &stb, 0, &opts, current_language);
 	uiout->field_stream ("value", stb);
       }
@@ -2618,7 +2613,7 @@ mi_cmd_trace_frame_collected (const char *command, char **argv, int argc)
      the trace frame info, but instead consult the register cache for
      register availability.  */
   {
-    struct frame_info *frame;
+    frame_info_ptr frame;
     struct gdbarch *gdbarch;
     int regnum;
     int numregs;
@@ -2631,8 +2626,7 @@ mi_cmd_trace_frame_collected (const char *command, char **argv, int argc)
 
     for (regnum = 0; regnum < numregs; regnum++)
       {
-	if (gdbarch_register_name (gdbarch, regnum) == NULL
-	    || *(gdbarch_register_name (gdbarch, regnum)) == '\0')
+	if (*(gdbarch_register_name (gdbarch, regnum)) == '\0')
 	  continue;
 
 	output_register (frame, regnum, registers_format, 1);
@@ -2707,6 +2701,14 @@ mi_cmd_fix_multi_location_breakpoint_output (const char *command, char **argv,
 					     int argc)
 {
   fix_multi_location_breakpoint_output_globally = true;
+}
+
+/* See mi/mi-main.h.  */
+
+void
+mi_cmd_fix_breakpoint_script_output (const char *command, char **argv, int argc)
+{
+  fix_breakpoint_script_output_globally = true;
 }
 
 /* Implement the "-complete" command.  */

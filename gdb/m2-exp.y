@@ -1,5 +1,5 @@
 /* YACC grammar for Modula-2 expressions, for GDB.
-   Copyright (C) 1986-2022 Free Software Foundation, Inc.
+   Copyright (C) 1986-2023 Free Software Foundation, Inc.
    Generated from expread.y (now c-exp.y) and contributed by the Department
    of Computer Science at the State University of New York at Buffalo, 1991.
 
@@ -43,9 +43,6 @@
 #include "value.h"
 #include "parser-defs.h"
 #include "m2-lang.h"
-#include "bfd.h" /* Required by objfiles.h.  */
-#include "symfile.h" /* Required by objfiles.h.  */
-#include "objfiles.h" /* For have_full_symbols and have_partial_symbols */
 #include "block.h"
 #include "m2-exp.h"
 
@@ -480,7 +477,7 @@ exp	:	SIZE '(' type ')'	%prec UNARY
 			{
 			  pstate->push_new<long_const_operation>
 			    (parse_m2_type (pstate)->builtin_int,
-			     TYPE_LENGTH ($3));
+			     $3->length ());
 			}
 	;
 

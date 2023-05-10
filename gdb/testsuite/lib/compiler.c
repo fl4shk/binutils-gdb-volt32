@@ -1,6 +1,6 @@
 /* This test file is part of GDB, the GNU debugger.
 
-   Copyright 1995-2022 Free Software Foundation, Inc.
+   Copyright 1995-2023 Free Software Foundation, Inc.
 
    This program is free software; you can redistribute it and/or modify
    it under the terms of the GNU General Public License as published by
@@ -26,9 +26,6 @@
 
    TODO: make compiler_info a local variable for get_compiler_info and
    test_compiler_info.
-
-   TODO: all clients should use test_compiler_info and should not
-   use gcc_compiled.
 
    */
 

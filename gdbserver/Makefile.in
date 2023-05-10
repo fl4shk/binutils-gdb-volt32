@@ -1,4 +1,4 @@
-# Copyright (C) 1989-2022 Free Software Foundation, Inc.
+# Copyright (C) 1989-2023 Free Software Foundation, Inc.
 
 # This file is part of GDB.
 
@@ -175,6 +175,7 @@ SFILES = \
 	$(srcdir)/linux-aarch64-low.cc \
 	$(srcdir)/linux-arc-low.cc \
 	$(srcdir)/linux-arm-low.cc \
+	$(srcdir)/linux-csky-low.cc \
 	$(srcdir)/linux-ia64-low.cc \
 	$(srcdir)/linux-loongarch-low.cc \
 	$(srcdir)/linux-low.cc \
@@ -212,6 +213,7 @@ SFILES = \
 	$(srcdir)/../gdb/arch/arm.c \
 	$(srcdir)/../gdb/arch/arm-get-next-pcs.c \
 	$(srcdir)/../gdb/arch/arm-linux.c \
+	$(srcdir)/../gdb/arch/csky.c \
 	$(srcdir)/../gdb/arch/loongarch.c \
 	$(srcdir)/../gdb/arch/ppc-linux-common.c \
 	$(srcdir)/../gdb/arch/riscv.c \
@@ -233,7 +235,7 @@ DEPFILES = @GDBSERVER_DEPFILES@
 LIBOBJS = @LIBOBJS@
 
 SOURCES = $(SFILES)
-TAGFILES = $(SOURCES) ${HFILES} ${ALLPARAM} ${POSSLIBS}
+TAGFILES = $(SOURCES)
 
 OBS = \
 	alloc.o \
@@ -396,8 +398,9 @@ TAGS:	${TAGFILES}
 	etags \
 	  `for i in yzzy ${DEPFILES}; do \
 	     if [ x$$i != xyzzy ]; then \
-	       echo ${srcdir}/$$i | sed -e 's/\.o$$/\.cc/' \
-		 -e 's,/\(arch\|nat\|target\)/,/../\1/,' \
+	       echo ${srcdir}/$$i | \
+		 sed -e 's,/\(\(arch\|nat\|target\)/.*\)\.o$$,/../gdb/\1.c,' \
+		     -e 's/\.o$$/\.cc/'; \
 	     fi; \
 	   done` \
 	  ${TAGFILES}

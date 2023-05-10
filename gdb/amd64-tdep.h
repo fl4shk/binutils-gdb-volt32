@@ -1,6 +1,6 @@
 /* Target-dependent definitions for AMD64.
 
-   Copyright (C) 2001-2022 Free Software Foundation, Inc.
+   Copyright (C) 2001-2023 Free Software Foundation, Inc.
    Contributed by Jiri Smid, SuSE Labs.
 
    This file is part of GDB.
@@ -22,7 +22,7 @@
 #define AMD64_TDEP_H
 
 struct gdbarch;
-struct frame_info;
+class frame_info_ptr;
 struct regcache;
 
 #include "i386-tdep.h"
@@ -93,7 +93,7 @@ extern displaced_step_copy_insn_closure_up amd64_displaced_step_copy_insn
    struct regcache *regs);
 extern void amd64_displaced_step_fixup
   (struct gdbarch *gdbarch, displaced_step_copy_insn_closure *closure,
-   CORE_ADDR from, CORE_ADDR to, struct regcache *regs);
+   CORE_ADDR from, CORE_ADDR to, struct regcache *regs, bool completed_p);
 
 /* Initialize the ABI for amd64.  Uses DEFAULT_TDESC as fallback
    tdesc, if INFO does not specify one.  */

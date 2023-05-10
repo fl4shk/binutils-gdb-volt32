@@ -1,6 +1,6 @@
 /* Abstract base class inherited by all process_stratum targets
 
-   Copyright (C) 2018-2022 Free Software Foundation, Inc.
+   Copyright (C) 2018-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -33,8 +33,7 @@ process_stratum_target::thread_address_space (ptid_t ptid)
   inferior *inf = find_inferior_ptid (this, ptid);
 
   if (inf == NULL || inf->aspace == NULL)
-    internal_error (__FILE__, __LINE__,
-		    _("Can't determine the current "
+    internal_error (_("Can't determine the current "
 		      "address space of thread %s\n"),
 		    target_pid_to_str (ptid).c_str ());
 
@@ -96,7 +95,7 @@ process_stratum_target::follow_exec (inferior *follow_inf, ptid_t ptid,
   if (orig_inf != follow_inf)
     {
       /* Execution continues in a new inferior, push the original inferior's
-         process target on the new inferior's target stack.  The process target
+	 process target on the new inferior's target stack.  The process target
 	 may decide to unpush itself from the original inferior's target stack
 	 after that, at its discretion.  */
       follow_inf->push_target (orig_inf->process_target ());
@@ -196,6 +195,17 @@ process_stratum_target::random_resumed_with_pending_wait_status
   gdb_assert (it != l.end ());
 
   return &*it;
+}
+
+/* See process-stratum-target.h.  */
+
+thread_info *
+process_stratum_target::find_thread (ptid_t ptid)
+{
+  inferior *inf = find_inferior_ptid (this, ptid);
+  if (inf == NULL)
+    return NULL;
+  return inf->find_thread (ptid);
 }
 
 /* See process-stratum-target.h.  */

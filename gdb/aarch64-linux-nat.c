@@ -1,6 +1,6 @@
 /* Native-dependent code for GNU/Linux AArch64.
 
-   Copyright (C) 2011-2022 Free Software Foundation, Inc.
+   Copyright (C) 2011-2023 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of GDB.
@@ -55,6 +55,8 @@
 #include "arch/aarch64-mte-linux.h"
 
 #include "nat/aarch64-mte-linux-ptrace.h"
+
+#include <string.h>
 
 #ifndef TRAP_HWBKPT
 #define TRAP_HWBKPT 0x0004
@@ -359,7 +361,7 @@ static void
 fetch_pauth_masks_from_thread (struct regcache *regcache)
 {
   aarch64_gdbarch_tdep *tdep
-    = (aarch64_gdbarch_tdep *) gdbarch_tdep (regcache->arch ());
+    = gdbarch_tdep<aarch64_gdbarch_tdep> (regcache->arch ());
   int ret;
   struct iovec iovec;
   uint64_t pauth_regset[2] = {0, 0};
@@ -385,7 +387,7 @@ static void
 fetch_mteregs_from_thread (struct regcache *regcache)
 {
   aarch64_gdbarch_tdep *tdep
-    = (aarch64_gdbarch_tdep *) gdbarch_tdep (regcache->arch ());
+    = gdbarch_tdep<aarch64_gdbarch_tdep> (regcache->arch ());
   int regno = tdep->mte_reg_base;
 
   gdb_assert (regno != -1);
@@ -410,7 +412,7 @@ static void
 store_mteregs_to_thread (struct regcache *regcache)
 {
   aarch64_gdbarch_tdep *tdep
-    = (aarch64_gdbarch_tdep *) gdbarch_tdep (regcache->arch ());
+    = gdbarch_tdep<aarch64_gdbarch_tdep> (regcache->arch ());
   int regno = tdep->mte_reg_base;
 
   gdb_assert (regno != -1);
@@ -439,22 +441,25 @@ static void
 fetch_tlsregs_from_thread (struct regcache *regcache)
 {
   aarch64_gdbarch_tdep *tdep
-    = (aarch64_gdbarch_tdep *) gdbarch_tdep (regcache->arch ());
-  int regno = tdep->tls_regnum;
+    = gdbarch_tdep<aarch64_gdbarch_tdep> (regcache->arch ());
+  int regno = tdep->tls_regnum_base;
 
   gdb_assert (regno != -1);
+  gdb_assert (tdep->tls_register_count > 0);
 
-  uint64_t tpidr = 0;
+  uint64_t tpidrs[tdep->tls_register_count];
+  memset(tpidrs, 0, sizeof(tpidrs));
+
   struct iovec iovec;
-
-  iovec.iov_base = &tpidr;
-  iovec.iov_len = sizeof (tpidr);
+  iovec.iov_base = tpidrs;
+  iovec.iov_len = sizeof (tpidrs);
 
   int tid = get_ptrace_pid (regcache->ptid ());
   if (ptrace (PTRACE_GETREGSET, tid, NT_ARM_TLS, &iovec) != 0)
-      perror_with_name (_("unable to fetch TLS register"));
+      perror_with_name (_("unable to fetch TLS registers"));
 
-  regcache->raw_supply (regno, &tpidr);
+  for (int i = 0; i < tdep->tls_register_count; i++)
+    regcache->raw_supply (regno + i, &tpidrs[i]);
 }
 
 /* Store to the current thread the valid TLS register set in GDB's
@@ -464,22 +469,26 @@ static void
 store_tlsregs_to_thread (struct regcache *regcache)
 {
   aarch64_gdbarch_tdep *tdep
-    = (aarch64_gdbarch_tdep *) gdbarch_tdep (regcache->arch ());
-  int regno = tdep->tls_regnum;
+    = gdbarch_tdep<aarch64_gdbarch_tdep> (regcache->arch ());
+  int regno = tdep->tls_regnum_base;
 
   gdb_assert (regno != -1);
+  gdb_assert (tdep->tls_register_count > 0);
 
-  uint64_t tpidr = 0;
+  uint64_t tpidrs[tdep->tls_register_count];
+  memset(tpidrs, 0, sizeof(tpidrs));
 
-  if (REG_VALID != regcache->get_register_status (regno))
-    return;
+  for (int i = 0; i < tdep->tls_register_count; i++)
+    {
+      if (REG_VALID != regcache->get_register_status (regno + i))
+	continue;
 
-  regcache->raw_collect (regno, (char *) &tpidr);
+      regcache->raw_collect (regno + i, (char *) &tpidrs[i]);
+    }
 
   struct iovec iovec;
-
-  iovec.iov_base = &tpidr;
-  iovec.iov_len = sizeof (tpidr);
+  iovec.iov_base = &tpidrs;
+  iovec.iov_len = sizeof (tpidrs);
 
   int tid = get_ptrace_pid (regcache->ptid ());
   if (ptrace (PTRACE_SETREGSET, tid, NT_ARM_TLS, &iovec) != 0)
@@ -493,7 +502,7 @@ static void
 aarch64_fetch_registers (struct regcache *regcache, int regno)
 {
   aarch64_gdbarch_tdep *tdep
-    = (aarch64_gdbarch_tdep *) gdbarch_tdep (regcache->arch ());
+    = gdbarch_tdep<aarch64_gdbarch_tdep> (regcache->arch ());
 
   if (regno == -1)
     {
@@ -531,7 +540,9 @@ aarch64_fetch_registers (struct regcache *regcache, int regno)
       && (regno == tdep->mte_reg_base))
     fetch_mteregs_from_thread (regcache);
 
-  if (tdep->has_tls () && regno == tdep->tls_regnum)
+  if (tdep->has_tls ()
+      && regno >= tdep->tls_regnum_base
+      && regno < tdep->tls_regnum_base + tdep->tls_register_count)
     fetch_tlsregs_from_thread (regcache);
 }
 
@@ -543,7 +554,7 @@ static void
 aarch32_fetch_registers (struct regcache *regcache, int regno)
 {
   arm_gdbarch_tdep *tdep
-    = (arm_gdbarch_tdep *) gdbarch_tdep (regcache->arch ());
+    = gdbarch_tdep<arm_gdbarch_tdep> (regcache->arch ());
 
   if (regno == -1)
     {
@@ -579,7 +590,7 @@ static void
 aarch64_store_registers (struct regcache *regcache, int regno)
 {
   aarch64_gdbarch_tdep *tdep
-    = (aarch64_gdbarch_tdep *) gdbarch_tdep (regcache->arch ());
+    = gdbarch_tdep<aarch64_gdbarch_tdep> (regcache->arch ());
 
   if (regno == -1)
     {
@@ -607,7 +618,9 @@ aarch64_store_registers (struct regcache *regcache, int regno)
       && (regno == tdep->mte_reg_base))
     store_mteregs_to_thread (regcache);
 
-  if (tdep->has_tls () && regno == tdep->tls_regnum)
+  if (tdep->has_tls ()
+      && regno >= tdep->tls_regnum_base
+      && regno < tdep->tls_regnum_base + tdep->tls_register_count)
     store_tlsregs_to_thread (regcache);
 }
 
@@ -619,7 +632,7 @@ static void
 aarch32_store_registers (struct regcache *regcache, int regno)
 {
   arm_gdbarch_tdep *tdep
-    = (arm_gdbarch_tdep *) gdbarch_tdep (regcache->arch ());
+    = gdbarch_tdep<arm_gdbarch_tdep> (regcache->arch ());
 
   if (regno == -1)
     {
@@ -781,14 +794,14 @@ aarch64_linux_nat_target::read_description ()
   if (ret == 0)
     return aarch32_read_description ();
 
-  CORE_ADDR hwcap = linux_get_hwcap (this);
-  CORE_ADDR hwcap2 = linux_get_hwcap2 (this);
+  CORE_ADDR hwcap = linux_get_hwcap ();
+  CORE_ADDR hwcap2 = linux_get_hwcap2 ();
 
   aarch64_features features;
   features.vq = aarch64_sve_get_vq (tid);
   features.pauth = hwcap & AARCH64_HWCAP_PACA;
   features.mte = hwcap2 & HWCAP2_MTE;
-  features.tls = true;
+  features.tls = aarch64_tls_register_count (tid);
 
   return aarch64_read_description (features);
 }
@@ -843,7 +856,7 @@ aarch64_linux_nat_target::stopped_data_address (CORE_ADDR *addr_p)
      kernel can potentially be tagged addresses.  */
   struct gdbarch *gdbarch = thread_architecture (inferior_ptid);
   const CORE_ADDR addr_trap
-    = address_significant (gdbarch, (CORE_ADDR) siginfo.si_addr);
+    = gdbarch_remove_non_address_bits (gdbarch, (CORE_ADDR) siginfo.si_addr);
 
   /* Check if the address matches any watched address.  */
   state = aarch64_get_debug_reg_state (inferior_ptid.pid ());
@@ -893,18 +906,23 @@ aarch64_linux_nat_target::thread_architecture (ptid_t ptid)
 
   /* Only return it if the current vector length matches the one in the tdep.  */
   aarch64_gdbarch_tdep *tdep
-    = (aarch64_gdbarch_tdep *) gdbarch_tdep (inf->gdbarch);
+    = gdbarch_tdep<aarch64_gdbarch_tdep> (inf->gdbarch);
   uint64_t vq = aarch64_sve_get_vq (ptid.lwp ());
   if (vq == tdep->vq)
     return inf->gdbarch;
 
   /* We reach here if the vector length for the thread is different from its
      value at process start.  Lookup gdbarch via info (potentially creating a
-     new one), stashing the vector length inside id.  Use -1 for when SVE
-     unavailable, to distinguish from an unset value of 0.  */
+     new one) by using a target description that corresponds to the new vq value
+     and the current architecture features.  */
+
+  const struct target_desc *tdesc = gdbarch_target_desc (inf->gdbarch);
+  aarch64_features features = aarch64_features_from_target_desc (tdesc);
+  features.vq = vq;
+
   struct gdbarch_info info;
   info.bfd_arch_info = bfd_lookup_arch (bfd_arch_aarch64, bfd_mach_aarch64);
-  info.id = (int *) (vq == 0 ? -1 : vq);
+  info.target_desc = aarch64_read_description (features);
   return gdbarch_find_by_info (info);
 }
 
@@ -913,7 +931,7 @@ aarch64_linux_nat_target::thread_architecture (ptid_t ptid)
 bool
 aarch64_linux_nat_target::supports_memory_tagging ()
 {
-  return (linux_get_hwcap2 (this) & HWCAP2_MTE) != 0;
+  return (linux_get_hwcap2 () & HWCAP2_MTE) != 0;
 }
 
 /* Implement the "fetch_memtags" target_ops method.  */

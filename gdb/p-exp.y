@@ -1,5 +1,5 @@
 /* YACC parser for Pascal expressions, for GDB.
-   Copyright (C) 2000-2022 Free Software Foundation, Inc.
+   Copyright (C) 2000-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -50,11 +50,7 @@
 #include "parser-defs.h"
 #include "language.h"
 #include "p-lang.h"
-#include "bfd.h" /* Required by objfiles.h.  */
-#include "symfile.h" /* Required by objfiles.h.  */
-#include "objfiles.h" /* For have_full_symbols and have_partial_symbols.  */
 #include "block.h"
-#include "completer.h"
 #include "expop.h"
 
 #define parse_type(ps) builtin_type (ps->gdbarch ())
@@ -220,7 +216,7 @@ exp1	:	exp
 exp	:	exp '^'   %prec UNARY
 			{ pstate->wrap<unop_ind_operation> ();
 			  if (current_type)
-			    current_type = TYPE_TARGET_TYPE (current_type); }
+			    current_type = current_type->target_type (); }
 	;
 
 exp	:	'@' exp    %prec UNARY
@@ -260,7 +256,7 @@ exp	:	field_exp FIELDNAME
 			      while (current_type->code ()
 				     == TYPE_CODE_PTR)
 				current_type =
-				  TYPE_TARGET_TYPE (current_type);
+				  current_type->target_type ();
 			      current_type = lookup_struct_elt_type (
 				current_type, $2.ptr, 0);
 			    }
@@ -278,7 +274,7 @@ exp	:	field_exp name
 			      while (current_type->code ()
 				     == TYPE_CODE_PTR)
 				current_type =
-				  TYPE_TARGET_TYPE (current_type);
+				  current_type->target_type ();
 			      current_type = lookup_struct_elt_type (
 				current_type, $2.ptr, 0);
 			    }
@@ -321,7 +317,7 @@ exp	:	exp '['
 			{ pop_current_type ();
 			  pstate->wrap2<subscript_operation> ();
 			  if (current_type)
-			    current_type = TYPE_TARGET_TYPE (current_type); }
+			    current_type = current_type->target_type (); }
 	;
 
 exp	:	exp '('
@@ -337,7 +333,7 @@ exp	:	exp '('
 			    (pstate->pop (), std::move (args));
 			  pop_current_type ();
 			  if (current_type)
- 	  		    current_type = TYPE_TARGET_TYPE (current_type);
+			    current_type = current_type->target_type ();
 			}
 	;
 
@@ -353,7 +349,7 @@ exp	:	type '(' exp ')' %prec UNARY
 			    {
 			      /* Allow automatic dereference of classes.  */
 			      if ((current_type->code () == TYPE_CODE_PTR)
-				  && (TYPE_TARGET_TYPE (current_type)->code () == TYPE_CODE_STRUCT)
+				  && (current_type->target_type ()->code () == TYPE_CODE_STRUCT)
 				  && (($1)->code () == TYPE_CODE_STRUCT))
 				pstate->wrap<unop_ind_operation> ();
 			    }
@@ -542,7 +538,7 @@ exp	:	DOLLAR_VARIABLE
 			      value *val
 				= value_of_internalvar (pstate->gdbarch (),
 							intvar);
-			      current_type = value_type (val);
+			      current_type = val->type ();
 			    }
  			}
  	;
@@ -553,7 +549,7 @@ exp	:	SIZEOF '(' type ')'	%prec UNARY
 			  $3 = check_typedef ($3);
 			  pstate->push_new<long_const_operation>
 			    (parse_type (pstate)->builtin_int,
-			     TYPE_LENGTH ($3)); }
+			     $3->length ()); }
 	;
 
 exp	:	SIZEOF  '(' exp ')'      %prec UNARY
@@ -591,14 +587,14 @@ exp	:	THIS
 			  this_val
 			    = value_of_this_silent (pstate->language ());
 			  if (this_val)
-			    this_type = value_type (this_val);
+			    this_type = this_val->type ();
 			  else
 			    this_type = NULL;
 			  if (this_type)
 			    {
 			      if (this_type->code () == TYPE_CODE_PTR)
 				{
-				  this_type = TYPE_TARGET_TYPE (this_type);
+				  this_type = this_type->target_type ();
 				  pstate->wrap<unop_ind_operation> ();
 				}
 			    }
@@ -707,7 +703,7 @@ variable:	name_not_typename
 			      this_val
 				= value_of_this_silent (pstate->language ());
 			      if (this_val)
-				this_type = value_type (this_val);
+				this_type = this_val->type ();
 			      else
 				this_type = NULL;
 			      if (this_type)

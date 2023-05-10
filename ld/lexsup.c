@@ -1,5 +1,5 @@
 /* Parse options for the GNU linker.
-   Copyright (C) 1991-2022 Free Software Foundation, Inc.
+   Copyright (C) 1991-2023 Free Software Foundation, Inc.
 
    This file is part of the GNU Binutils.
 
@@ -130,6 +130,10 @@ static const struct ld_option ld_options[] =
     '\0', NULL, N_("Enable support of non-contiguous memory regions"), TWO_DASHES },
   { {"enable-non-contiguous-regions-warnings", no_argument, NULL, OPTION_NON_CONTIGUOUS_REGIONS_WARNINGS},
     '\0', NULL, N_("Enable warnings when --enable-non-contiguous-regions may cause unexpected behaviour"), TWO_DASHES },
+  { {"disable-linker-version", no_argument, NULL, OPTION_DISABLE_LINKER_VERSION},
+    '\0', NULL, N_("Disable the LINKER_VERSION linker script directive"), TWO_DASHES },
+  { {"enable-linker-version", no_argument, NULL, OPTION_ENABLE_LINKER_VERSION},
+    '\0', NULL, N_("Enable the LINKER_VERSION linker script directive"), TWO_DASHES },
   { {"EB", no_argument, NULL, OPTION_EB},
     '\0', NULL, N_("Link big-endian objects"), ONE_DASH },
   { {"EL", no_argument, NULL, OPTION_EL},
@@ -381,6 +385,9 @@ static const struct ld_option ld_options[] =
   { {"no-undefined", no_argument, NULL, OPTION_NO_UNDEFINED},
     '\0', NULL, N_("Do not allow unresolved references in object files"),
     TWO_DASHES },
+  { {"no-warnings", no_argument, NULL, OPTION_NO_WARNINGS},
+    'w', NULL, N_("Do not display any warning or error messages"),
+    TWO_DASHES },
   { {"allow-shlib-undefined", no_argument, NULL, OPTION_ALLOW_SHLIB_UNDEFINED},
     '\0', NULL, N_("Allow unresolved references in shared libraries"),
     TWO_DASHES },
@@ -396,6 +403,8 @@ static const struct ld_option ld_options[] =
      OPTION_ERROR_HANDLING_SCRIPT},
     '\0', N_("SCRIPT"), N_("Provide a script to help with undefined symbol errors"), TWO_DASHES},
 #endif
+  { {"undefined-version", no_argument, NULL, OPTION_UNDEFINED_VERSION},
+    '\0', NULL, N_("Allow undefined version"), EXACTLY_TWO_DASHES },
   { {"no-undefined-version", no_argument, NULL, OPTION_NO_UNDEFINED_VERSION},
     '\0', NULL, N_("Disallow undefined version"), TWO_DASHES },
   { {"default-symver", no_argument, NULL, OPTION_DEFAULT_SYMVER},
@@ -595,6 +604,12 @@ static const struct ld_option ld_options[] =
     TWO_DASHES },
   { {"no-print-map-discarded", no_argument, NULL, OPTION_NO_PRINT_MAP_DISCARDED},
     '\0', NULL, N_("Do not show discarded sections in map file output"),
+    TWO_DASHES },
+  { {"print-map-locals", no_argument, NULL, OPTION_PRINT_MAP_LOCALS},
+    '\0', NULL, N_("Show local symbols in map file output"),
+    TWO_DASHES },
+  { {"no-print-map-locals", no_argument, NULL, OPTION_NO_PRINT_MAP_LOCALS},
+    '\0', NULL, N_("Do not show local symbols in map file output (default)"),
     TWO_DASHES },
   { {"ctf-variables", no_argument, NULL, OPTION_CTF_VARIABLES},
     '\0', NULL, N_("Emit names and types of static variables in CTF"),
@@ -931,9 +946,11 @@ parse_args (unsigned argc, char **argv)
 	  break;
 	case OPTION_WARN_RWX_SEGMENTS:
 	  link_info.no_warn_rwx_segments = 0;
+	  link_info.user_warn_rwx_segments = 1;
 	  break;
 	case OPTION_NO_WARN_RWX_SEGMENTS:
 	  link_info.no_warn_rwx_segments = 1;
+	  link_info.user_warn_rwx_segments = 1;
 	  break;
 	case 'e':
 	  lang_add_entry (optarg, true);
@@ -1088,6 +1105,16 @@ parse_args (unsigned argc, char **argv)
 	  break;
 #endif
 
+	case OPTION_ENABLE_LINKER_VERSION:
+	  enable_linker_version = true;
+	  break;
+	case OPTION_DISABLE_LINKER_VERSION:
+	  enable_linker_version = false;
+	  break;
+
+	case OPTION_UNDEFINED_VERSION:
+	  link_info.allow_undefined_version = true;
+	  break;
 	case OPTION_NO_UNDEFINED_VERSION:
 	  link_info.allow_undefined_version = false;
 	  break;
@@ -1549,6 +1576,11 @@ parse_args (unsigned argc, char **argv)
 	case OPTION_NO_WARN_FATAL:
 	  config.fatal_warnings = false;
 	  break;
+	case OPTION_NO_WARNINGS:
+	case 'w':
+	  config.no_warnings = true;
+	  config.fatal_warnings = false;
+	  break;
 	case OPTION_WARN_MULTIPLE_GP:
 	  config.warn_multiple_gp = true;
 	  break;
@@ -1720,6 +1752,14 @@ parse_args (unsigned argc, char **argv)
 
 	case OPTION_PRINT_MAP_DISCARDED:
 	  config.print_map_discarded = true;
+	  break;
+
+	case OPTION_NO_PRINT_MAP_LOCALS:
+	  config.print_map_locals = false;
+	  break;
+
+	case OPTION_PRINT_MAP_LOCALS:
+	  config.print_map_locals = true;
 	  break;
 
 	case OPTION_DEPENDENCY_FILE:
@@ -2146,15 +2186,11 @@ elf_static_list_options (FILE *file)
   fprintf (file, _("\
   --package-metadata[=JSON]   Generate package metadata note\n"));
   fprintf (file, _("\
-  --compress-debug-sections=[none|zlib|zlib-gnu|zlib-gabi]\n\
-                              Compress DWARF debug sections using zlib\n"));
-#ifdef DEFAULT_FLAG_COMPRESS_DEBUG
+  --compress-debug-sections=[none|zlib|zlib-gnu|zlib-gabi|zstd]\n\
+			      Compress DWARF debug sections\n"));
   fprintf (file, _("\
-                                Default: zlib-gabi\n"));
-#else
-  fprintf (file, _("\
-                                Default: none\n"));
-#endif
+                                Default: %s\n"),
+	   bfd_get_compression_algorithm_name (config.compress_debug));
   fprintf (file, _("\
   -z common-page-size=SIZE    Set common page size to SIZE\n"));
   fprintf (file, _("\

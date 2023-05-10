@@ -1,6 +1,6 @@
 /* Native debugging support for GNU/Linux (LWP layer).
 
-   Copyright (C) 2000-2022 Free Software Foundation, Inc.
+   Copyright (C) 2000-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -87,7 +87,7 @@ public:
   bool supports_non_stop () override;
   bool always_non_stop_p () override;
 
-  void async (int) override;
+  void async (bool) override;
 
   void stop (ptid_t) override;
 
@@ -101,16 +101,16 @@ public:
 
   int fileio_open (struct inferior *inf, const char *filename,
 		   int flags, int mode, int warn_if_slow,
-		   int *target_errno) override;
+		   fileio_error *target_errno) override;
 
   gdb::optional<std::string>
     fileio_readlink (struct inferior *inf,
 		     const char *filename,
-		     int *target_errno) override;
+		     fileio_error *target_errno) override;
 
   int fileio_unlink (struct inferior *inf,
 		     const char *filename,
-		     int *target_errno) override;
+		     fileio_error *target_errno) override;
 
   int insert_fork_catchpoint (int) override;
   int remove_fork_catchpoint (int) override;
@@ -232,7 +232,9 @@ struct lwp_info : intrusive_list_node<lwp_info>
   /* The last resume GDB requested on this thread.  */
   resume_kind last_resume_kind = resume_continue;
 
-  /* If non-zero, a pending wait status.  */
+  /* If non-zero, a pending wait status.  A pending process exit is
+     recorded in WAITSTATUS, because W_EXITCODE(0,0) happens to be
+     0.  */
   int status = 0;
 
   /* When 'stopped' is set, this is where the lwp last stopped, with
@@ -260,9 +262,10 @@ struct lwp_info : intrusive_list_node<lwp_info>
   /* Non-zero if we expect a duplicated SIGINT.  */
   int ignore_sigint = 0;
 
-  /* If WAITSTATUS->KIND != TARGET_WAITKIND_SPURIOUS, the waitstatus
-     for this LWP's last event.  This may correspond to STATUS above,
-     or to a local variable in lin_lwp_wait.  */
+  /* If WAITSTATUS->KIND != TARGET_WAITKIND_IGNORE, the waitstatus for
+     this LWP's last event.  This usually corresponds to STATUS above,
+     however because W_EXITCODE(0,0) happens to be 0, a process exit
+     will be recorded here, while 'status == 0' is ambiguous.  */
   struct target_waitstatus waitstatus;
 
   /* Signal whether we are in a SYSCALL_ENTRY or
@@ -330,8 +333,8 @@ extern void linux_unstop_all_lwps (void);
 void linux_nat_switch_fork (ptid_t new_ptid);
 
 /* Store the saved siginfo associated with PTID in *SIGINFO.
-   Return 1 if it was retrieved successfully, 0 otherwise (*SIGINFO is
+   Return true if it was retrieved successfully, false otherwise (*SIGINFO is
    uninitialized in such case).  */
-int linux_nat_get_siginfo (ptid_t ptid, siginfo_t *siginfo);
+bool linux_nat_get_siginfo (ptid_t ptid, siginfo_t *siginfo);
 
 #endif /* LINUX_NAT_H */

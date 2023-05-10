@@ -1,5 +1,5 @@
 /* coff object file format
-   Copyright (C) 1989-2022 Free Software Foundation, Inc.
+   Copyright (C) 1989-2023 Free Software Foundation, Inc.
 
    This file is part of GAS.
 
@@ -38,6 +38,10 @@
 #ifndef TARGET_FORMAT
 #define TARGET_FORMAT "coff-arm"
 #endif
+#endif
+
+#ifdef TC_AARCH64
+#include "coff/aarch64.h"
 #endif
 
 #ifdef TC_PPC
@@ -156,7 +160,7 @@
 /* Omit the tv related fields.  */
 /* Accessors.  */
 
-#define SA_GET_SYM_TAGNDX(s)	(SYM_AUXENT (s)->x_sym.x_tagndx.l)
+#define SA_GET_SYM_TAGNDX(s)	(SYM_AUXENT (s)->x_sym.x_tagndx.u32)
 #define SA_GET_SYM_LNNO(s)	(SYM_AUXENT (s)->x_sym.x_misc.x_lnsz.x_lnno)
 #define SA_GET_SYM_SIZE(s)	(SYM_AUXENT (s)->x_sym.x_misc.x_lnsz.x_size)
 #define SA_GET_SYM_FSIZE(s)	(SYM_AUXENT (s)->x_sym.x_misc.x_fsize)

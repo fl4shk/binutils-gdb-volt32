@@ -1,4 +1,4 @@
-/* Copyright (C) 2008-2022 Free Software Foundation, Inc.
+/* Copyright (C) 2008-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -175,29 +175,25 @@ static const int FULL_TIB_SIZE = 0x1000;
 
 static bool maint_display_all_tib = false;
 
-static struct gdbarch_data *windows_gdbarch_data_handle;
-
 struct windows_gdbarch_data
 {
-  struct type *siginfo_type;
-  struct type *tib_ptr_type; /* Type of thread information block */
+  struct type *siginfo_type = nullptr;
+  /* Type of thread information block.  */
+  struct type *tib_ptr_type = nullptr;
 };
 
-/* Allocate windows_gdbarch_data for an arch.  */
-
-static void *
-init_windows_gdbarch_data (struct gdbarch *gdbarch)
-{
-  return GDBARCH_OBSTACK_ZALLOC (gdbarch, struct windows_gdbarch_data);
-}
+static const registry<gdbarch>::key<windows_gdbarch_data>
+     windows_gdbarch_data_handle;
 
 /* Get windows_gdbarch_data of an arch.  */
 
 static struct windows_gdbarch_data *
 get_windows_gdbarch_data (struct gdbarch *gdbarch)
 {
-  return ((struct windows_gdbarch_data *)
-	  gdbarch_data (gdbarch, windows_gdbarch_data_handle));
+  windows_gdbarch_data *result = windows_gdbarch_data_handle.get (gdbarch);
+  if (result == nullptr)
+    result = windows_gdbarch_data_handle.emplace (gdbarch);
+  return result;
 }
 
 /* Define Thread Local Base pointer type.  */
@@ -218,17 +214,19 @@ windows_get_tlb_type (struct gdbarch *gdbarch)
   if (windows_gdbarch_data->tib_ptr_type != nullptr)
     return windows_gdbarch_data->tib_ptr_type;
 
-  dword_ptr_type = arch_integer_type (gdbarch, gdbarch_ptr_bit (gdbarch),
+  type_allocator alloc (gdbarch);
+
+  dword_ptr_type = init_integer_type (alloc, gdbarch_ptr_bit (gdbarch),
 				 1, "DWORD_PTR");
-  dword32_type = arch_integer_type (gdbarch, 32,
+  dword32_type = init_integer_type (alloc, 32,
 				 1, "DWORD32");
-  word_type = arch_integer_type (gdbarch, 16,
+  word_type = init_integer_type (alloc, 16,
 				 1, "WORD");
-  wchar_type = arch_integer_type (gdbarch, 16,
+  wchar_type = init_integer_type (alloc, 16,
 				  1, "wchar_t");
   void_ptr_type = lookup_pointer_type (builtin_type (gdbarch)->builtin_void);
-  wchar_ptr_type = arch_pointer_type (gdbarch, gdbarch_ptr_bit (gdbarch),
-				      NULL, wchar_type);
+  wchar_ptr_type = init_pointer_type (alloc, gdbarch_ptr_bit (gdbarch),
+				      nullptr, wchar_type);
 
   /* list entry */
 
@@ -247,10 +245,10 @@ windows_get_tlb_type (struct gdbarch *gdbarch)
   seh_type = arch_composite_type (gdbarch, NULL, TYPE_CODE_STRUCT);
   seh_type->set_name (xstrdup ("seh"));
 
-  seh_ptr_type = arch_type (gdbarch, TYPE_CODE_PTR,
-			    TYPE_LENGTH (void_ptr_type) * TARGET_CHAR_BIT,
-			    NULL);
-  TYPE_TARGET_TYPE (seh_ptr_type) = seh_type;
+  seh_ptr_type = alloc.new_type (TYPE_CODE_PTR,
+				 void_ptr_type->length () * TARGET_CHAR_BIT,
+				 NULL);
+  seh_ptr_type->set_target_type (seh_type);
 
   append_composite_type_field (seh_type, "next_seh", seh_ptr_type);
   append_composite_type_field (seh_type, "handler",
@@ -268,10 +266,10 @@ windows_get_tlb_type (struct gdbarch *gdbarch)
   append_composite_type_field (peb_ldr_type, "in_init_order", list_type);
   append_composite_type_field (peb_ldr_type, "entry_in_progress",
 			       void_ptr_type);
-  peb_ldr_ptr_type = arch_type (gdbarch, TYPE_CODE_PTR,
-				TYPE_LENGTH (void_ptr_type) * TARGET_CHAR_BIT,
-				NULL);
-  TYPE_TARGET_TYPE (peb_ldr_ptr_type) = peb_ldr_type;
+  peb_ldr_ptr_type = alloc.new_type (TYPE_CODE_PTR,
+				     void_ptr_type->length () * TARGET_CHAR_BIT,
+				     NULL);
+  peb_ldr_ptr_type->set_target_type (peb_ldr_type);
 
   /* struct UNICODE_STRING */
   uni_str_type = arch_composite_type (gdbarch, "unicode_string",
@@ -281,7 +279,7 @@ windows_get_tlb_type (struct gdbarch *gdbarch)
   append_composite_type_field (uni_str_type, "maximum_length", word_type);
   append_composite_type_field_aligned (uni_str_type, "buffer",
 				       wchar_ptr_type,
-				       TYPE_LENGTH (wchar_ptr_type));
+				       wchar_ptr_type->length ());
 
   /* struct _RTL_USER_PROCESS_PARAMETERS */
   rupp_type = arch_composite_type (gdbarch, "rtl_user_process_parameters",
@@ -295,7 +293,7 @@ windows_get_tlb_type (struct gdbarch *gdbarch)
   append_composite_type_field (rupp_type, "console_flags", dword32_type);
   append_composite_type_field_aligned (rupp_type, "standard_input",
 				       void_ptr_type,
-				       TYPE_LENGTH (void_ptr_type));
+				       void_ptr_type->length ());
   append_composite_type_field (rupp_type, "standard_output", void_ptr_type);
   append_composite_type_field (rupp_type, "standard_error", void_ptr_type);
   append_composite_type_field (rupp_type, "current_directory", uni_str_type);
@@ -316,13 +314,13 @@ windows_get_tlb_type (struct gdbarch *gdbarch)
   append_composite_type_field (rupp_type, "show_window_flags", dword32_type);
   append_composite_type_field_aligned (rupp_type, "window_title",
 				       uni_str_type,
-				       TYPE_LENGTH (void_ptr_type));
+				       void_ptr_type->length ());
   append_composite_type_field (rupp_type, "desktop_info", uni_str_type);
   append_composite_type_field (rupp_type, "shell_info", uni_str_type);
   append_composite_type_field (rupp_type, "runtime_data", uni_str_type);
 
-  rupp_ptr_type = arch_pointer_type (gdbarch, gdbarch_ptr_bit (gdbarch),
-				     NULL, rupp_type);
+  rupp_ptr_type = init_pointer_type (alloc, gdbarch_ptr_bit (gdbarch),
+				     nullptr, rupp_type);
 
 
   /* struct process environment block */
@@ -338,10 +336,10 @@ windows_get_tlb_type (struct gdbarch *gdbarch)
   append_composite_type_field (peb_type, "sub_system_data", void_ptr_type);
   append_composite_type_field (peb_type, "process_heap", void_ptr_type);
   append_composite_type_field (peb_type, "fast_peb_lock", void_ptr_type);
-  peb_ptr_type = arch_type (gdbarch, TYPE_CODE_PTR,
-			    TYPE_LENGTH (void_ptr_type) * TARGET_CHAR_BIT,
-			    NULL);
-  TYPE_TARGET_TYPE (peb_ptr_type) = peb_type;
+  peb_ptr_type = alloc.new_type (TYPE_CODE_PTR,
+				 void_ptr_type->length () * TARGET_CHAR_BIT,
+				 NULL);
+  peb_ptr_type->set_target_type (peb_type);
 
 
   /* struct thread information block */
@@ -382,10 +380,10 @@ windows_get_tlb_type (struct gdbarch *gdbarch)
   /* uint32_t last_error_number;		%fs:0x0034 */
   append_composite_type_field (tib_type, "last_error_number", dword_ptr_type);
 
-  tib_ptr_type = arch_type (gdbarch, TYPE_CODE_PTR,
-			    TYPE_LENGTH (void_ptr_type) * TARGET_CHAR_BIT,
-			    NULL);
-  TYPE_TARGET_TYPE (tib_ptr_type) = tib_type;
+  tib_ptr_type = alloc.new_type (TYPE_CODE_PTR,
+				 void_ptr_type->length () * TARGET_CHAR_BIT,
+				 NULL);
+  tib_ptr_type->set_target_type (tib_type);
 
   windows_gdbarch_data->tib_ptr_type = tib_ptr_type;
 
@@ -404,11 +402,11 @@ static void
 tlb_value_read (struct value *val)
 {
   CORE_ADDR tlb;
-  struct type *type = check_typedef (value_type (val));
+  struct type *type = check_typedef (val->type ());
 
   if (!target_get_tib_address (inferior_ptid, &tlb))
     error (_("Unable to read tlb"));
-  store_typed_address (value_contents_raw (val).data (), type, tlb);
+  store_typed_address (val->contents_raw ().data (), type, tlb);
 }
 
 /* This function implements the lval_computed support for writing a
@@ -437,10 +435,10 @@ tlb_make_value (struct gdbarch *gdbarch, struct internalvar *var, void *ignore)
   if (target_has_stack () && inferior_ptid != null_ptid)
     {
       struct type *type = windows_get_tlb_type (gdbarch);
-      return allocate_computed_value (type, &tlb_value_funcs, NULL);
+      return value::allocate_computed (type, &tlb_value_funcs, NULL);
     }
 
-  return allocate_value (builtin_type (gdbarch)->builtin_void);
+  return value::allocate (builtin_type (gdbarch)->builtin_void);
 }
 
 
@@ -746,7 +744,7 @@ create_enum (struct gdbarch *gdbarch, int bit, const char *name,
   struct type *type;
   int i;
 
-  type = arch_type (gdbarch, TYPE_CODE_ENUM, bit, name);
+  type = type_allocator (gdbarch).new_type (TYPE_CODE_ENUM, bit, name);
   type->set_num_fields (count);
   type->set_fields
     ((struct field *) TYPE_ZALLOC (type, sizeof (struct field) * count));
@@ -812,11 +810,12 @@ windows_get_siginfo_type (struct gdbarch *gdbarch)
   if (windows_gdbarch_data->siginfo_type != NULL)
     return windows_gdbarch_data->siginfo_type;
 
-  dword_type = arch_integer_type (gdbarch, gdbarch_int_bit (gdbarch),
+  type_allocator alloc (gdbarch);
+  dword_type = init_integer_type (alloc, gdbarch_int_bit (gdbarch),
 				  1, "DWORD");
-  pvoid_type = arch_pointer_type (gdbarch, gdbarch_ptr_bit (gdbarch), "PVOID",
+  pvoid_type = init_pointer_type (alloc, gdbarch_ptr_bit (gdbarch), "PVOID",
 				  builtin_type (gdbarch)->builtin_void);
-  ulongptr_type = arch_integer_type (gdbarch, gdbarch_ptr_bit (gdbarch),
+  ulongptr_type = init_integer_type (alloc, gdbarch_ptr_bit (gdbarch),
 				     1, "ULONG_PTR");
 
   /* ExceptionCode value names */
@@ -845,8 +844,8 @@ windows_get_siginfo_type (struct gdbarch *gdbarch)
 
   siginfo_type = arch_composite_type (gdbarch, "EXCEPTION_RECORD",
 				      TYPE_CODE_STRUCT);
-  siginfo_ptr_type = arch_pointer_type (gdbarch, gdbarch_ptr_bit (gdbarch),
-					NULL, siginfo_type);
+  siginfo_ptr_type = init_pointer_type (alloc, gdbarch_ptr_bit (gdbarch),
+					nullptr, siginfo_type);
 
   /* ExceptionCode is documented as type DWORD, but here a helper
      enum type is used instead to display a human-readable value.  */
@@ -859,7 +858,7 @@ windows_get_siginfo_type (struct gdbarch *gdbarch)
   append_composite_type_field (siginfo_type, "NumberParameters", dword_type);
   /* The 64-bit variant needs some padding.  */
   append_composite_type_field_aligned (siginfo_type, "",
-				       para_type, TYPE_LENGTH (ulongptr_type));
+				       para_type, ulongptr_type->length ());
 
   windows_gdbarch_data->siginfo_type = siginfo_type;
 
@@ -935,7 +934,7 @@ windows_init_abi_common (struct gdbarch_info info, struct gdbarch *gdbarch)
   windows_so_ops = solib_target_so_ops;
   windows_so_ops.solib_create_inferior_hook
     = windows_solib_create_inferior_hook;
-  set_solib_ops (gdbarch, &windows_so_ops);
+  set_gdbarch_so_ops (gdbarch, &windows_so_ops);
 
   set_gdbarch_get_siginfo_type (gdbarch, windows_get_siginfo_type);
 }
@@ -1011,10 +1010,11 @@ is_linked_with_cygwin_dll (bfd *abfd)
       || import_table_va >= idata_section_end_va)
     {
       warning (_("\
-%s: import table's virtual address (0x%" BFD_VMA_FMT "x) is outside .idata \
-section's range [0x%" BFD_VMA_FMT "x, 0x%" BFD_VMA_FMT "x[."),
-	       bfd_get_filename (abfd), import_table_va, idata_section_va,
-	       idata_section_end_va);
+%s: import table's virtual address (%s) is outside .idata \
+section's range [%s, %s]."),
+	       bfd_get_filename (abfd), hex_string (import_table_va),
+	       hex_string (idata_section_va),
+	       hex_string (idata_section_end_va));
       return false;
     }
 
@@ -1061,10 +1061,11 @@ section's range [0x%" BFD_VMA_FMT "x, 0x%" BFD_VMA_FMT "x[."),
       if (name_va < idata_section_va || name_va >= idata_section_end_va)
 	{
 	  warning (_("\
-%s: name's virtual address (0x%" BFD_VMA_FMT "x) is outside .idata section's \
-range [0x%" BFD_VMA_FMT "x, 0x%" BFD_VMA_FMT "x[."),
-		   bfd_get_filename (abfd), name_va, idata_section_va,
-		   idata_section_end_va);
+%s: name's virtual address (%s) is outside .idata section's \
+range [%s, %s]."),
+		   bfd_get_filename (abfd), hex_string (name_va),
+		   hex_string (idata_section_va),
+		   hex_string (idata_section_end_va));
 	  break;
 	}
 
@@ -1195,9 +1196,6 @@ void _initialize_windows_tdep ();
 void
 _initialize_windows_tdep ()
 {
-  windows_gdbarch_data_handle
-    = gdbarch_data_register_post_init (init_windows_gdbarch_data);
-
   init_w32_command_list ();
   cmd_list_element *info_w32_thread_information_block_cmd
     = add_cmd ("thread-information-block", class_info, display_tib,

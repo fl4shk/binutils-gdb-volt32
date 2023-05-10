@@ -2,7 +2,7 @@
    convert to internal format, for GDB. Used as a last resort if no
    debugging symbols recognized.
 
-   Copyright (C) 2003-2022 Free Software Foundation, Inc.
+   Copyright (C) 2003-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -127,7 +127,8 @@ add_pe_exported_sym (minimal_symbol_reader &reader,
 		     const char *dll_name, struct objfile *objfile)
 {
   /* Add the stored offset to get the loaded address of the symbol.  */
-  CORE_ADDR vma = func_rva + section_data->vma_offset;
+  unrelocated_addr vma = unrelocated_addr (func_rva
+					   + section_data->vma_offset);
 
   /* Generate a (hopefully unique) qualified name using the first part
      of the dll name, e.g. KERNEL32!AddAtomA.  This matches the style
@@ -174,7 +175,6 @@ add_pe_forwarded_sym (minimal_symbol_reader &reader,
 		      const char *forward_func_name, int ordinal,
 		      const char *dll_name, struct objfile *objfile)
 {
-  CORE_ADDR vma, baseaddr;
   struct bound_minimal_symbol msymbol;
   enum minimal_symbol_type msymtype;
   int forward_dll_name_len = strlen (forward_dll_name);
@@ -210,7 +210,7 @@ add_pe_forwarded_sym (minimal_symbol_reader &reader,
 			      " \"%s\" in dll \"%s\", pointing to \"%s\"\n"),
 		sym_name, dll_name, forward_qualified_name.c_str ());
 
-  vma = msymbol.value_address ();
+  unrelocated_addr vma = msymbol.minsym->unrelocated_address ();
   msymtype = msymbol.minsym->type ();
   section = msymbol.minsym->section_index ();
 
@@ -232,14 +232,11 @@ add_pe_forwarded_sym (minimal_symbol_reader &reader,
      really be relocated properly, but nevertheless we make a stab at
      it, choosing an approach consistent with the history of this
      code.  */
-  baseaddr = objfile->text_section_offset ();
 
-  reader.record_with_info (qualified_name.c_str (), vma - baseaddr, msymtype,
-			   section);
+  reader.record_with_info (qualified_name.c_str (), vma, msymtype, section);
 
   /* Enter the plain name as well, which might not be unique.  */
-  reader.record_with_info (bare_name.c_str(), vma - baseaddr, msymtype,
-			   section);
+  reader.record_with_info (bare_name.c_str(), vma, msymtype, section);
 
   return 1;
 }
@@ -300,7 +297,7 @@ void
 read_pe_exported_syms (minimal_symbol_reader &reader,
 		       struct objfile *objfile)
 {
-  bfd *dll = objfile->obfd;
+  bfd *dll = objfile->obfd.get ();
   unsigned long nbnormal, nbforward;
   unsigned long pe_header_offset, opthdr_ofs, num_entries, i;
   unsigned long export_opthdrrva, export_opthdrsize;
@@ -312,7 +309,7 @@ read_pe_exported_syms (minimal_symbol_reader &reader,
   int is_pe64 = 0;
   int is_pe32 = 0;
 
-  char const *target = bfd_get_target (objfile->obfd);
+  char const *target = bfd_get_target (objfile->obfd.get ());
 
   std::vector<struct read_pe_section_data> section_data
     (PE_SECTION_TABLE_SIZE);
@@ -331,7 +328,9 @@ read_pe_exported_syms (minimal_symbol_reader &reader,
   section_data[PE_SECTION_INDEX_BSS].section_name = ".bss";
 
   is_pe64 = (strcmp (target, "pe-x86-64") == 0
-	     || strcmp (target, "pei-x86-64") == 0);
+	     || strcmp (target, "pei-x86-64") == 0
+	     || strcmp (target, "pe-aarch64") == 0
+	     || strcmp (target, "pei-aarch64") == 0);
   is_pe32 = (strcmp (target, "pe-i386") == 0
 	     || strcmp (target, "pei-i386") == 0
 	     || strcmp (target, "pe-arm-wince-little") == 0
@@ -610,7 +609,9 @@ pe_text_section_offset (struct bfd *abfd)
   target = bfd_get_target (abfd);
 
   is_pe64 = (strcmp (target, "pe-x86-64") == 0
-	     || strcmp (target, "pei-x86-64") == 0);
+	     || strcmp (target, "pei-x86-64") == 0
+	     || strcmp (target, "pe-aarch64") == 0
+	     || strcmp (target, "pei-aarch64") == 0);
   is_pe32 = (strcmp (target, "pe-i386") == 0
 	     || strcmp (target, "pei-i386") == 0
 	     || strcmp (target, "pe-arm-wince-little") == 0

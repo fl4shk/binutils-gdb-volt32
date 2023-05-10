@@ -1,5 +1,5 @@
 /* CTF type deduplication.
-   Copyright (C) 2019-2022 Free Software Foundation, Inc.
+   Copyright (C) 2019-2023 Free Software Foundation, Inc.
 
    This file is part of libctf.
 
@@ -412,7 +412,7 @@ intern (ctf_dict_t *fp, char *atom)
 /* Add an indication of the namespace to a type name in a way that is not valid
    for C identifiers.  Used to maintain hashes of type names to other things
    while allowing for the four C namespaces (normal, struct, union, enum).
-   Return a new dynamically-allocated string.  */
+   Return a pointer into the cd_decorated_names atoms table.  */
 static const char *
 ctf_decorate_type_name (ctf_dict_t *fp, const char *name, int kind)
 {
@@ -2306,6 +2306,10 @@ sort_output_mapping (const ctf_next_hkv_t *one, const ctf_next_hkv_t *two,
   ctf_id_t one_type;
   ctf_id_t two_type;
 
+  /* Inputs are always equal to themselves.  */
+  if (one == two)
+    return 0;
+
   one_gid = ctf_dynhash_lookup (d->cd_output_first_gid, one_hval);
   two_gid = ctf_dynhash_lookup (d->cd_output_first_gid, two_hval);
 
@@ -2671,6 +2675,8 @@ ctf_dedup_emit_type (const char *hval, ctf_dict_t *output, ctf_dict_t **inputs,
 	  ctf_parent_name_set (target, _CTF_SECTION);
 
 	  input->ctf_dedup.cd_output = target;
+	  input->ctf_link_in_out = target;
+	  target->ctf_link_in_out = input;
 	}
       output_num = input_num;
     }

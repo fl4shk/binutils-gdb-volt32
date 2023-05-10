@@ -1,6 +1,6 @@
 dnl Process this file with autoconf to produce a configure script.
 dnl
-dnl   Copyright (C) 2021 Free Software Foundation, Inc.
+dnl   Copyright (C) 2021-2023 Free Software Foundation, Inc.
 dnl
 dnl This file is free software; you can redistribute it and/or modify
 dnl it under the terms of the GNU General Public License as published by
@@ -41,24 +41,11 @@ if test "$enable_shared" != "yes"; then
   AC_MSG_WARN([Cannot set --enable-shared for gprofng/libcollector. Profiling will be unavailable.])
 fi
 
-GPROFNG_VARIANT=unknown
-case "${host}" in
-  x86_64-*-linux*)
-    GPROFNG_VARIANT=amd64-Linux
-    ;;
-  i?86-*-linux*)
-    GPROFNG_VARIANT=intel-Linux
-    ;;
-  aarch64-*-linux*)
-    GPROFNG_VARIANT=aarch64-Linux
-    ;;
-esac
-AC_SUBST(GPROFNG_VARIANT)
-
 ACX_PROG_CC_WARNING_OPTS([-Wno-nonnull-compare], [GPROFNG_NO_NONNULL_COMPARE_CFLAGS])
 AC_SUBST(GPROFNG_NO_NONNULL_COMPARE_CFLAGS)
 
 AC_CONFIG_FILES([Makefile])
-AC_CONFIG_HEADERS([lib-config.h:../common/config.h.in])
+AC_CONFIG_HEADERS([lib-config.h:../common/lib-config.h.in])
+
 AC_OUTPUT
 

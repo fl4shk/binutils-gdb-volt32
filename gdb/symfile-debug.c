@@ -1,6 +1,6 @@
 /* Debug logging for the symbol file functions for the GNU debugger, GDB.
 
-   Copyright (C) 2013-2022 Free Software Foundation, Inc.
+   Copyright (C) 2013-2023 Free Software Foundation, Inc.
 
    Contributed by Cygnus Support, using pieces from other GDB modules.
 
@@ -47,7 +47,7 @@ struct debug_sym_fns_data
 
 /* We need to record a pointer to the real set of functions for each
    objfile.  */
-static const struct objfile_key<debug_sym_fns_data>
+static const registry<objfile>::key<debug_sym_fns_data>
   symfile_debug_objfile_data_key;
 
 /* If true all calls to the symfile functions are logged.  */
@@ -154,6 +154,18 @@ objfile::forget_cached_source_info ()
   if (debug_symfile)
     gdb_printf (gdb_stdlog, "qf->forget_cached_source_info (%s)\n",
 		objfile_debug_name (this));
+
+  for (compunit_symtab *cu : compunits ())
+    {
+      for (symtab *s : cu->filetabs ())
+	{
+	  if (s->fullname != NULL)
+	    {
+	      xfree (s->fullname);
+	      s->fullname = NULL;
+	    }
+	}
+    }
 
   for (const auto &iter : qf_require_partial_symbols ())
     iter->forget_cached_source_info (this);

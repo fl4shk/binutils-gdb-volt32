@@ -1,6 +1,6 @@
 /* GNU/Linux native-dependent code common to multiple platforms.
 
-   Copyright (C) 2001-2022 Free Software Foundation, Inc.
+   Copyright (C) 2001-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -60,7 +60,6 @@
 #include "symfile.h"
 #include "gdbsupport/agent.h"
 #include "tracepoint.h"
-#include "gdbsupport/buffer.h"
 #include "target-descriptions.h"
 #include "gdbsupport/filestuff.h"
 #include "objfiles.h"
@@ -244,6 +243,7 @@ static int lwp_status_pending_p (struct lwp_info *lp);
 
 static void save_stop_reason (struct lwp_info *lp);
 
+static bool proc_mem_file_is_writable ();
 static void close_proc_mem_file (pid_t pid);
 static void open_proc_mem_file (ptid_t ptid);
 
@@ -253,6 +253,19 @@ static bool
 is_leader (lwp_info *lp)
 {
   return lp->ptid.pid () == lp->ptid.lwp ();
+}
+
+/* Convert an LWP's pending status to a std::string.  */
+
+static std::string
+pending_status_str (lwp_info *lp)
+{
+  gdb_assert (lwp_status_pending_p (lp));
+
+  if (lp->waitstatus.kind () != TARGET_WAITKIND_IGNORE)
+    return lp->waitstatus.to_string ();
+  else
+    return status_to_str (lp->status);
 }
 
 
@@ -371,6 +384,7 @@ linux_init_ptrace_procfs (pid_t pid, int attached)
   linux_enable_event_reporting (pid, options);
   linux_ptrace_init_warnings ();
   linux_proc_init_warnings ();
+  proc_mem_file_is_writable ();
 }
 
 linux_nat_target::~linux_nat_target ()
@@ -889,7 +903,7 @@ linux_nat_switch_fork (ptid_t new_ptid)
 static void
 exit_lwp (struct lwp_info *lp)
 {
-  struct thread_info *th = find_thread_ptid (linux_target, lp->ptid);
+  struct thread_info *th = linux_target->find_thread (lp->ptid);
 
   if (th)
     {
@@ -1115,8 +1129,7 @@ linux_nat_target::attach (const char *args, int from_tty)
 		 gdb_signal_to_string (signo));
 	}
 
-      internal_error (__FILE__, __LINE__,
-		      _("unexpected status %d for PID %ld"),
+      internal_error (_("unexpected status %d for PID %ld"),
 		      status, (long) ptid.lwp ());
     }
 
@@ -1219,14 +1232,14 @@ get_detach_signal (struct lwp_info *lp)
     signo = gdb_signal_from_host (WSTOPSIG (lp->status));
   else
     {
-      struct thread_info *tp = find_thread_ptid (linux_target, lp->ptid);
+      thread_info *tp = linux_target->find_thread (lp->ptid);
 
       if (target_is_non_stop_p () && !tp->executing ())
 	{
 	  if (tp->has_pending_waitstatus ())
 	    {
 	      /* If the thread has a pending event, and it was stopped with a
-	         signal, use that signal to resume it.  If it has a pending
+		 signal, use that signal to resume it.  If it has a pending
 		 event of another kind, it was not stopped with a signal, so
 		 resume it without a signal.  */
 	      if (tp->pending_waitstatus ().kind () == TARGET_WAITKIND_STOPPED)
@@ -1312,7 +1325,7 @@ detach_one_lwp (struct lwp_info *lp, int *signo_p)
 
 
   /* Check in thread_info::pending_waitstatus.  */
-  thread_info *tp = find_thread_ptid (linux_target, lp->ptid);
+  thread_info *tp = linux_target->find_thread (lp->ptid);
   if (tp->has_pending_waitstatus ())
     {
       const target_waitstatus &ws = tp->pending_waitstatus ();
@@ -1566,7 +1579,7 @@ linux_nat_resume_callback (struct lwp_info *lp, struct lwp_info *except)
     {
       struct thread_info *thread;
 
-      thread = find_thread_ptid (linux_target, lp->ptid);
+      thread = linux_target->find_thread (lp->ptid);
       if (thread != NULL)
 	{
 	  signo = thread->stop_signal ();
@@ -1647,12 +1660,12 @@ linux_nat_target::resume (ptid_t scope_ptid, int step, enum gdb_signal signo)
 	 this thread with a signal?  */
       gdb_assert (signo == GDB_SIGNAL_0);
 
-      linux_nat_debug_printf ("Short circuiting for status 0x%x",
-			      lp->status);
+      linux_nat_debug_printf ("Short circuiting for status %s",
+			      pending_status_str (lp).c_str ());
 
       if (target_can_async_p ())
 	{
-	  target_async (1);
+	  target_async (true);
 	  /* Tell the event loop we have something to process.  */
 	  async_file_mark ();
 	}
@@ -1704,7 +1717,7 @@ linux_handle_syscall_trap (struct lwp_info *lp, int stopping)
 {
   struct target_waitstatus *ourstatus = &lp->waitstatus;
   struct gdbarch *gdbarch = target_thread_architecture (lp->ptid);
-  thread_info *thread = find_thread_ptid (linux_target, lp->ptid);
+  thread_info *thread = linux_target->find_thread (lp->ptid);
   int syscall_number = (int) gdbarch_get_syscall_number (gdbarch, thread);
 
   if (stopping)
@@ -1843,11 +1856,9 @@ linux_handle_extended_wait (struct lwp_info *lp, int status)
 	  if (ret == -1)
 	    perror_with_name (_("waiting for new child"));
 	  else if (ret != new_pid)
-	    internal_error (__FILE__, __LINE__,
-			    _("wait returned unexpected PID %d"), ret);
+	    internal_error (_("wait returned unexpected PID %d"), ret);
 	  else if (!WIFSTOPPED (status))
-	    internal_error (__FILE__, __LINE__,
-			    _("wait returned unexpected status 0x%x"), status);
+	    internal_error (_("wait returned unexpected status 0x%x"), status);
 	}
 
       ptid_t child_ptid (new_pid, new_pid);
@@ -1914,7 +1925,6 @@ linux_handle_extended_wait (struct lwp_info *lp, int status)
 	    {
 	      /* The process is not using thread_db.  Add the LWP to
 		 GDB's list.  */
-	      target_post_attach (new_lp->ptid.lwp ());
 	      add_thread (linux_target, new_lp->ptid);
 	    }
 
@@ -1988,8 +1998,7 @@ linux_handle_extended_wait (struct lwp_info *lp, int status)
 	return 0;
     }
 
-  internal_error (__FILE__, __LINE__,
-		  _("unknown ptrace event %d"), event);
+  internal_error (_("unknown ptrace event %d"), event);
 }
 
 /* Suspend waiting for a signal.  We're mostly interested in
@@ -2539,6 +2548,10 @@ save_stop_reason (struct lwp_info *lp)
   if (!linux_target->low_status_is_event (lp->status))
     return;
 
+  inferior *inf = find_inferior_ptid (linux_target, lp->ptid);
+  if (inf->starting_up)
+    return;
+
   regcache = get_thread_regcache (linux_target, lp->ptid);
   gdbarch = regcache->arch ();
 
@@ -2983,7 +2996,7 @@ linux_nat_filter_event (int lwpid, int status)
       if (!lp->step
 	  && WSTOPSIG (status) && sigismember (&pass_mask, WSTOPSIG (status))
 	  && (WSTOPSIG (status) != SIGSTOP
-	      || !find_thread_ptid (linux_target, lp->ptid)->stop_requested)
+	      || !linux_target->find_thread (lp->ptid)->stop_requested)
 	  && !linux_wstatus_maybe_breakpoint (status))
 	{
 	  linux_resume_one_lwp (lp, lp->step, signo);
@@ -3137,7 +3150,7 @@ linux_nat_wait_1 (ptid_t ptid, struct target_waitstatus *ourstatus,
   if (lp != NULL)
     {
       linux_nat_debug_printf ("Using pending wait status %s for %s.",
-			      status_to_str (lp->status).c_str (),
+			      pending_status_str (lp).c_str (),
 			      lp->ptid.to_string ().c_str ());
     }
 
@@ -3606,28 +3619,21 @@ siginfo_fixup (siginfo_t *siginfo, gdb_byte *inf_siginfo, int direction)
 }
 
 static enum target_xfer_status
-linux_xfer_siginfo (enum target_object object,
+linux_xfer_siginfo (ptid_t ptid, enum target_object object,
 		    const char *annex, gdb_byte *readbuf,
 		    const gdb_byte *writebuf, ULONGEST offset, ULONGEST len,
 		    ULONGEST *xfered_len)
 {
-  int pid;
   siginfo_t siginfo;
   gdb_byte inf_siginfo[sizeof (siginfo_t)];
 
   gdb_assert (object == TARGET_OBJECT_SIGNAL_INFO);
   gdb_assert (readbuf || writebuf);
 
-  pid = inferior_ptid.lwp ();
-  if (pid == 0)
-    pid = inferior_ptid.pid ();
-
   if (offset > sizeof (siginfo))
     return TARGET_XFER_E_IO;
 
-  errno = 0;
-  ptrace (PTRACE_GETSIGINFO, pid, (PTRACE_TYPE_ARG3) 0, &siginfo);
-  if (errno != 0)
+  if (!linux_nat_get_siginfo (ptid, &siginfo))
     return TARGET_XFER_E_IO;
 
   /* When GDB is built as a 64-bit application, ptrace writes into
@@ -3650,6 +3656,7 @@ linux_xfer_siginfo (enum target_object object,
       /* Convert back to ptrace layout before flushing it out.  */
       siginfo_fixup (&siginfo, inf_siginfo, 1);
 
+      int pid = get_ptrace_pid (ptid);
       errno = 0;
       ptrace (PTRACE_SETSIGINFO, pid, (PTRACE_TYPE_ARG3) 0, &siginfo);
       if (errno != 0)
@@ -3667,8 +3674,9 @@ linux_nat_xfer_osdata (enum target_object object,
 		       ULONGEST *xfered_len);
 
 static enum target_xfer_status
-linux_proc_xfer_memory_partial (gdb_byte *readbuf, const gdb_byte *writebuf,
-				ULONGEST offset, LONGEST len, ULONGEST *xfered_len);
+linux_proc_xfer_memory_partial (int pid, gdb_byte *readbuf,
+				const gdb_byte *writebuf, ULONGEST offset,
+				LONGEST len, ULONGEST *xfered_len);
 
 enum target_xfer_status
 linux_nat_target::xfer_partial (enum target_object object,
@@ -3677,7 +3685,7 @@ linux_nat_target::xfer_partial (enum target_object object,
 				ULONGEST offset, ULONGEST len, ULONGEST *xfered_len)
 {
   if (object == TARGET_OBJECT_SIGNAL_INFO)
-    return linux_xfer_siginfo (object, annex, readbuf, writebuf,
+    return linux_xfer_siginfo (inferior_ptid, object, annex, readbuf, writebuf,
 			       offset, len, xfered_len);
 
   /* The target is connected but no live inferior is selected.  Pass
@@ -3706,8 +3714,16 @@ linux_nat_target::xfer_partial (enum target_object object,
       if (addr_bit < (sizeof (ULONGEST) * HOST_CHAR_BIT))
 	offset &= ((ULONGEST) 1 << addr_bit) - 1;
 
-      return linux_proc_xfer_memory_partial (readbuf, writebuf,
-					     offset, len, xfered_len);
+      /* If /proc/pid/mem is writable, don't fallback to ptrace.  If
+	 the write via /proc/pid/mem fails because the inferior execed
+	 (and we haven't seen the exec event yet), a subsequent ptrace
+	 poke would incorrectly write memory to the post-exec address
+	 space, while the core was trying to write to the pre-exec
+	 address space.  */
+      if (proc_mem_file_is_writable ())
+	return linux_proc_xfer_memory_partial (inferior_ptid.pid (), readbuf,
+					       writebuf, offset, len,
+					       xfered_len);
     }
 
   return inf_ptrace_target::xfer_partial (object, annex, readbuf, writebuf,
@@ -3878,24 +3894,18 @@ open_proc_mem_file (ptid_t ptid)
 			  fd, ptid.pid (), ptid.lwp ());
 }
 
-/* Implement the to_xfer_partial target method using /proc/PID/mem.
-   Because we can use a single read/write call, this can be much more
-   efficient than banging away at PTRACE_PEEKTEXT.  Also, unlike
-   PTRACE_PEEKTEXT/PTRACE_POKETEXT, this works with running
-   threads.  */
+/* Helper for linux_proc_xfer_memory_partial and
+   proc_mem_file_is_writable.  FD is the already opened /proc/pid/mem
+   file, and PID is the pid of the corresponding process.  The rest of
+   the arguments are like linux_proc_xfer_memory_partial's.  */
 
 static enum target_xfer_status
-linux_proc_xfer_memory_partial (gdb_byte *readbuf, const gdb_byte *writebuf,
-				ULONGEST offset, LONGEST len,
-				ULONGEST *xfered_len)
+linux_proc_xfer_memory_partial_fd (int fd, int pid,
+				   gdb_byte *readbuf, const gdb_byte *writebuf,
+				   ULONGEST offset, LONGEST len,
+				   ULONGEST *xfered_len)
 {
   ssize_t ret;
-
-  auto iter = proc_mem_file_map.find (inferior_ptid.pid ());
-  if (iter == proc_mem_file_map.end ())
-    return TARGET_XFER_EOF;
-
-  int fd = iter->second.fd ();
 
   gdb_assert (fd != -1);
 
@@ -3915,8 +3925,7 @@ linux_proc_xfer_memory_partial (gdb_byte *readbuf, const gdb_byte *writebuf,
   if (ret == -1)
     {
       linux_nat_debug_printf ("accessing fd %d for pid %d failed: %s (%d)",
-			      fd, inferior_ptid.pid (),
-			      safe_strerror (errno), errno);
+			      fd, pid, safe_strerror (errno), errno);
       return TARGET_XFER_E_IO;
     }
   else if (ret == 0)
@@ -3924,7 +3933,7 @@ linux_proc_xfer_memory_partial (gdb_byte *readbuf, const gdb_byte *writebuf,
       /* EOF means the address space is gone, the whole process exited
 	 or execed.  */
       linux_nat_debug_printf ("accessing fd %d for pid %d got EOF",
-			      fd, inferior_ptid.pid ());
+			      fd, pid);
       return TARGET_XFER_EOF;
     }
   else
@@ -3932,6 +3941,83 @@ linux_proc_xfer_memory_partial (gdb_byte *readbuf, const gdb_byte *writebuf,
       *xfered_len = ret;
       return TARGET_XFER_OK;
     }
+}
+
+/* Implement the to_xfer_partial target method using /proc/PID/mem.
+   Because we can use a single read/write call, this can be much more
+   efficient than banging away at PTRACE_PEEKTEXT.  Also, unlike
+   PTRACE_PEEKTEXT/PTRACE_POKETEXT, this works with running
+   threads.  */
+
+static enum target_xfer_status
+linux_proc_xfer_memory_partial (int pid, gdb_byte *readbuf,
+				const gdb_byte *writebuf, ULONGEST offset,
+				LONGEST len, ULONGEST *xfered_len)
+{
+  auto iter = proc_mem_file_map.find (pid);
+  if (iter == proc_mem_file_map.end ())
+    return TARGET_XFER_EOF;
+
+  int fd = iter->second.fd ();
+
+  return linux_proc_xfer_memory_partial_fd (fd, pid, readbuf, writebuf, offset,
+					    len, xfered_len);
+}
+
+/* Check whether /proc/pid/mem is writable in the current kernel, and
+   return true if so.  It wasn't writable before Linux 2.6.39, but
+   there's no way to know whether the feature was backported to older
+   kernels.  So we check to see if it works.  The result is cached,
+   and this is garanteed to be called once early during inferior
+   startup, so that any warning is printed out consistently between
+   GDB invocations.  Note we don't call it during GDB startup instead
+   though, because then we might warn with e.g. just "gdb --version"
+   on sandboxed systems.  See PR gdb/29907.  */
+
+static bool
+proc_mem_file_is_writable ()
+{
+  static gdb::optional<bool> writable;
+
+  if (writable.has_value ())
+    return *writable;
+
+  writable.emplace (false);
+
+  /* We check whether /proc/pid/mem is writable by trying to write to
+     one of our variables via /proc/self/mem.  */
+
+  int fd = gdb_open_cloexec ("/proc/self/mem", O_RDWR | O_LARGEFILE, 0).release ();
+
+  if (fd == -1)
+    {
+      warning (_("opening /proc/self/mem file failed: %s (%d)"),
+	       safe_strerror (errno), errno);
+      return *writable;
+    }
+
+  SCOPE_EXIT { close (fd); };
+
+  /* This is the variable we try to write to.  Note OFFSET below.  */
+  volatile gdb_byte test_var = 0;
+
+  gdb_byte writebuf[] = {0x55};
+  ULONGEST offset = (uintptr_t) &test_var;
+  ULONGEST xfered_len;
+
+  enum target_xfer_status res
+    = linux_proc_xfer_memory_partial_fd (fd, getpid (), nullptr, writebuf,
+					 offset, 1, &xfered_len);
+
+  if (res == TARGET_XFER_OK)
+    {
+      gdb_assert (xfered_len == 1);
+      gdb_assert (test_var == 0x55);
+      /* Success.  */
+      *writable = true;
+    }
+
+  return *writable;
 }
 
 /* Parse LINE as a signal set and add its set bits to SIGS.  */
@@ -4040,9 +4126,7 @@ linux_nat_target::static_tracepoint_markers_by_strid (const char *strid)
   /* Pause all */
   target_stop (ptid);
 
-  memcpy (s, "qTfSTM", sizeof ("qTfSTM"));
-  s[sizeof ("qTfSTM")] = 0;
-
+  strcpy (s, "qTfSTM");
   agent_run_command (pid, s, strlen (s) + 1);
 
   /* Unpause all.  */
@@ -4059,8 +4143,7 @@ linux_nat_target::static_tracepoint_markers_by_strid (const char *strid)
 	}
       while (*p++ == ',');	/* comma-separated list */
 
-      memcpy (s, "qTsSTM", sizeof ("qTsSTM"));
-      s[sizeof ("qTsSTM")] = 0;
+      strcpy (s, "qTsSTM");
       agent_run_command (pid, s, strlen (s) + 1);
       p = s;
     }
@@ -4139,9 +4222,9 @@ handle_target_event (int error, gdb_client_data client_data)
 /* target_async implementation.  */
 
 void
-linux_nat_target::async (int enable)
+linux_nat_target::async (bool enable)
 {
-  if ((enable != 0) == is_async_p ())
+  if (enable == is_async_p ())
     return;
 
   /* Block child signals while we create/destroy the pipe, as their
@@ -4151,7 +4234,7 @@ linux_nat_target::async (int enable)
   if (enable)
     {
       if (!async_file_open ())
-	internal_error (__FILE__, __LINE__, "creating event pipe failed.");
+	internal_error ("creating event pipe failed.");
 
       add_file_handler (async_wait_fd (), handle_target_event, NULL,
 			"linux-nat");
@@ -4195,7 +4278,7 @@ linux_nat_stop_lwp (struct lwp_info *lwp)
 
       if (debug_linux_nat)
 	{
-	  if (find_thread_ptid (linux_target, lwp->ptid)->stop_requested)
+	  if (linux_target->find_thread (lwp->ptid)->stop_requested)
 	    linux_nat_debug_printf ("already stopped/stop_requested %s",
 				    lwp->ptid.to_string ().c_str ());
 	  else
@@ -4292,7 +4375,7 @@ linux_nat_fileio_pid_of (struct inferior *inf)
 int
 linux_nat_target::fileio_open (struct inferior *inf, const char *filename,
 			       int flags, int mode, int warn_if_slow,
-			       int *target_errno)
+			       fileio_error *target_errno)
 {
   int nat_flags;
   mode_t nat_mode;
@@ -4317,7 +4400,7 @@ linux_nat_target::fileio_open (struct inferior *inf, const char *filename,
 
 gdb::optional<std::string>
 linux_nat_target::fileio_readlink (struct inferior *inf, const char *filename,
-				   int *target_errno)
+				   fileio_error *target_errno)
 {
   char buf[PATH_MAX];
   int len;
@@ -4337,7 +4420,7 @@ linux_nat_target::fileio_readlink (struct inferior *inf, const char *filename,
 
 int
 linux_nat_target::fileio_unlink (struct inferior *inf, const char *filename,
-				 int *target_errno)
+				 fileio_error *target_errno)
 {
   int ret;
 
@@ -4368,23 +4451,11 @@ linux_nat_target::linux_nat_target ()
 
 /* See linux-nat.h.  */
 
-int
+bool
 linux_nat_get_siginfo (ptid_t ptid, siginfo_t *siginfo)
 {
-  int pid;
-
-  pid = ptid.lwp ();
-  if (pid == 0)
-    pid = ptid.pid ();
-
-  errno = 0;
-  ptrace (PTRACE_GETSIGINFO, pid, (PTRACE_TYPE_ARG3) 0, siginfo);
-  if (errno != 0)
-    {
-      memset (siginfo, 0, sizeof (*siginfo));
-      return 0;
-    }
-  return 1;
+  int pid = get_ptrace_pid (ptid);
+  return ptrace (PTRACE_GETSIGINFO, pid, (PTRACE_TYPE_ARG3) 0, siginfo) == 0;
 }
 
 /* See nat/linux-nat.h.  */

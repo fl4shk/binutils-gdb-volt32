@@ -1,5 +1,5 @@
 /* aarch64-dis.c -- AArch64 disassembler.
-   Copyright (C) 2009-2022 Free Software Foundation, Inc.
+   Copyright (C) 2009-2023 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of the GNU opcodes library.
@@ -25,8 +25,17 @@
 #include "opintl.h"
 #include "aarch64-dis.h"
 #include "elf-bfd.h"
+#include "safe-ctype.h"
+#include "obstack.h"
+
+#define obstack_chunk_alloc xmalloc
+#define obstack_chunk_free free
 
 #define INSNLEN 4
+
+/* This character is used to encode style information within the output
+   buffers.  See get_style_text and print_operands for more details.  */
+#define STYLE_MARKER_CHAR '\002'
 
 /* Cached mapping symbol state.  */
 enum map_type
@@ -159,24 +168,35 @@ extract_fields (aarch64_insn code, aarch64_insn mask, ...)
   return value;
 }
 
-/* Extract the value of all fields in SELF->fields from instruction CODE.
-   The least significant bit comes from the final field.  */
+/* Extract the value of all fields in SELF->fields after START from
+   instruction CODE.  The least significant bit comes from the final field.  */
 
 static aarch64_insn
-extract_all_fields (const aarch64_operand *self, aarch64_insn code)
+extract_all_fields_after (const aarch64_operand *self, unsigned int start,
+			  aarch64_insn code)
 {
   aarch64_insn value;
   unsigned int i;
   enum aarch64_field_kind kind;
 
   value = 0;
-  for (i = 0; i < ARRAY_SIZE (self->fields) && self->fields[i] != FLD_NIL; ++i)
+  for (i = start;
+       i < ARRAY_SIZE (self->fields) && self->fields[i] != FLD_NIL; ++i)
     {
       kind = self->fields[i];
       value <<= fields[kind].width;
       value |= extract_field (kind, code, 0);
     }
   return value;
+}
+
+/* Extract the value of all fields in SELF->fields from instruction CODE.
+   The least significant bit comes from the final field.  */
+
+static aarch64_insn
+extract_all_fields (const aarch64_operand *self, aarch64_insn code)
+{
+  return extract_all_fields_after (self, 0, code);
 }
 
 /* Sign-extend bit I of VALUE.  */
@@ -244,8 +264,9 @@ get_expected_qualifier (const aarch64_inst *inst, int i)
   aarch64_opnd_qualifier_seq_t qualifiers;
   /* Should not be called if the qualifier is known.  */
   assert (inst->operands[i].qualifier == AARCH64_OPND_QLF_NIL);
+  int invalid_count;
   if (aarch64_find_best_match (inst, inst->opcode->qualifiers_list,
-			       i, qualifiers))
+			       i, qualifiers, &invalid_count))
     return qualifiers[i];
   else
     return AARCH64_OPND_QLF_NIL;
@@ -269,7 +290,8 @@ aarch64_ext_regno (const aarch64_operand *self, aarch64_opnd_info *info,
 		   const aarch64_inst *inst ATTRIBUTE_UNUSED,
 		   aarch64_operand_error *errors ATTRIBUTE_UNUSED)
 {
-  info->reg.regno = extract_field (self->fields[0], code, 0);
+  info->reg.regno = (extract_field (self->fields[0], code, 0)
+		     + get_operand_specific_data (self));
   return true;
 }
 
@@ -325,7 +347,7 @@ aarch64_ext_reglane (const aarch64_operand *self, aarch64_opnd_info *info,
 	  unsigned shift;
 	  /* index2 for e.g. INS <Vd>.<Ts>[<index1>], <Vn>.<Ts>[<index2>].  */
 	  assert (info->idx == 1);	/* Vn */
-	  aarch64_insn value = extract_field (FLD_imm4, code, 0);
+	  aarch64_insn value = extract_field (FLD_imm4_11, code, 0);
 	  /* Depend on AARCH64_OPND_Ed to determine the qualifier.  */
 	  info->qualifier = get_expected_qualifier (inst, info->idx);
 	  shift = get_logsz (aarch64_get_qualifier_esize (info->qualifier));
@@ -429,6 +451,7 @@ aarch64_ext_reglist (const aarch64_operand *self, aarch64_opnd_info *info,
   info->reglist.first_regno = extract_field (self->fields[0], code, 0);
   /* len */
   info->reglist.num_regs = extract_field (FLD_len, code, 0) + 1;
+  info->reglist.stride = 1;
   return true;
 }
 
@@ -472,6 +495,7 @@ aarch64_ext_ldst_reglist (const aarch64_operand *self ATTRIBUTE_UNUSED,
   if (expected_num != data[value].num_elements || data[value].is_reserved)
     return false;
   info->reglist.num_regs = data[value].num_regs;
+  info->reglist.stride = 1;
 
   return true;
 }
@@ -500,6 +524,7 @@ aarch64_ext_ldst_reglist_r (const aarch64_operand *self ATTRIBUTE_UNUSED,
   if (info->reglist.num_regs == 1 && value == (aarch64_insn) 1)
     info->reglist.num_regs = 2;
 
+  info->reglist.stride = 1;
   return true;
 }
 
@@ -563,6 +588,7 @@ aarch64_ext_ldst_elemlist (const aarch64_operand *self ATTRIBUTE_UNUSED,
 
   info->reglist.has_index = 1;
   info->reglist.num_regs = 0;
+  info->reglist.stride = 1;
   /* Number of registers is equal to the number of elements in
      each structure to be loaded/stored.  */
   info->reglist.num_regs = get_opcode_dependent_value (inst->opcode);
@@ -676,6 +702,8 @@ aarch64_ext_imm (const aarch64_operand *self, aarch64_opnd_info *info,
 
   if (operand_need_shift_by_two (self))
     imm <<= 2;
+  else if (operand_need_shift_by_three (self))
+    imm <<= 3;
   else if (operand_need_shift_by_four (self))
     imm <<= 4;
 
@@ -1381,7 +1409,7 @@ aarch64_ext_reg_extended (const aarch64_operand *self ATTRIBUTE_UNUSED,
   info->shifter.kind =
     aarch64_get_operand_modifier_from_value (value, true /* extend_p */);
   /* imm3 */
-  info->shifter.amount = extract_field (FLD_imm3, code,  0);
+  info->shifter.amount = extract_field (FLD_imm3_10, code,  0);
 
   /* This makes the constraint checking happy.  */
   info->shifter.operator_present = 1;
@@ -1420,7 +1448,7 @@ aarch64_ext_reg_shifted (const aarch64_operand *self ATTRIBUTE_UNUSED,
        instructions.  */
     return false;
   /* imm6 */
-  info->shifter.amount = extract_field (FLD_imm6, code,  0);
+  info->shifter.amount = extract_field (FLD_imm6_10, code,  0);
 
   /* This makes the constraint checking happy.  */
   info->shifter.operator_present = 1;
@@ -1498,7 +1526,7 @@ aarch64_ext_sve_addr_ri_s9xvl (const aarch64_operand *self,
 {
   int offset;
 
-  offset = extract_fields (code, 0, 2, FLD_SVE_imm6, FLD_imm3);
+  offset = extract_fields (code, 0, 2, FLD_SVE_imm6, FLD_imm3_10);
   offset = (((offset + 256) & 511) - 256);
   return aarch64_ext_sve_addr_reg_mul_vl (self, info, code, offset);
 }
@@ -1701,6 +1729,20 @@ aarch64_ext_sve_aimm (const aarch64_operand *self,
 	  && decode_sve_aimm (info, (uint8_t) info->imm.value));
 }
 
+bool
+aarch64_ext_sve_aligned_reglist (const aarch64_operand *self,
+				 aarch64_opnd_info *info, aarch64_insn code,
+				 const aarch64_inst *inst ATTRIBUTE_UNUSED,
+				 aarch64_operand_error *errors ATTRIBUTE_UNUSED)
+{
+  unsigned int num_regs = get_operand_specific_data (self);
+  unsigned int val = extract_field (self->fields[0], code, 0);
+  info->reglist.first_regno = val * num_regs;
+  info->reglist.num_regs = num_regs;
+  info->reglist.stride = 1;
+  return true;
+}
+
 /* Decode an SVE CPY/DUP immediate.  */
 bool
 aarch64_ext_sve_asimm (const aarch64_operand *self,
@@ -1776,44 +1818,65 @@ aarch64_ext_sme_za_hv_tiles (const aarch64_operand *self,
 
   /* Deduce qualifier encoded in size and Q fields.  */
   if (fld_size == 0)
-    info->qualifier = AARCH64_OPND_QLF_S_B;
-  else if (fld_size == 1)
-    info->qualifier = AARCH64_OPND_QLF_S_H;
-  else if (fld_size == 2)
-    info->qualifier = AARCH64_OPND_QLF_S_S;
-  else if (fld_size == 3 && fld_q == 0)
-    info->qualifier = AARCH64_OPND_QLF_S_D;
-  else if (fld_size == 3 && fld_q == 1)
-    info->qualifier = AARCH64_OPND_QLF_S_Q;
-
-  info->za_tile_vector.index.regno = fld_rv + 12;
-  info->za_tile_vector.v = fld_v;
-
-  switch (info->qualifier)
     {
-    case AARCH64_OPND_QLF_S_B:
-      info->za_tile_vector.regno = 0;
-      info->za_tile_vector.index.imm = fld_zan_imm;
-      break;
-    case AARCH64_OPND_QLF_S_H:
-      info->za_tile_vector.regno = fld_zan_imm >> 3;
-      info->za_tile_vector.index.imm = fld_zan_imm & 0x07;
-      break;
-    case AARCH64_OPND_QLF_S_S:
-      info->za_tile_vector.regno = fld_zan_imm >> 2;
-      info->za_tile_vector.index.imm = fld_zan_imm & 0x03;
-      break;
-    case AARCH64_OPND_QLF_S_D:
-      info->za_tile_vector.regno = fld_zan_imm >> 1;
-      info->za_tile_vector.index.imm = fld_zan_imm & 0x01;
-      break;
-    case AARCH64_OPND_QLF_S_Q:
-      info->za_tile_vector.regno = fld_zan_imm;
-      info->za_tile_vector.index.imm = 0;
-      break;
-    default:
-      return false;
+      info->indexed_za.regno = 0;
+      info->indexed_za.index.imm = fld_zan_imm;
     }
+  else if (fld_size == 1)
+    {
+      info->indexed_za.regno = fld_zan_imm >> 3;
+      info->indexed_za.index.imm = fld_zan_imm & 0x07;
+    }
+  else if (fld_size == 2)
+    {
+      info->indexed_za.regno = fld_zan_imm >> 2;
+      info->indexed_za.index.imm = fld_zan_imm & 0x03;
+    }
+  else if (fld_size == 3 && fld_q == 0)
+    {
+      info->indexed_za.regno = fld_zan_imm >> 1;
+      info->indexed_za.index.imm = fld_zan_imm & 0x01;
+    }
+  else if (fld_size == 3 && fld_q == 1)
+    {
+      info->indexed_za.regno = fld_zan_imm;
+      info->indexed_za.index.imm = 0;
+    }
+  else
+    return false;
+
+  info->indexed_za.index.regno = fld_rv + 12;
+  info->indexed_za.v = fld_v;
+
+  return true;
+}
+
+bool
+aarch64_ext_sme_za_hv_tiles_range (const aarch64_operand *self,
+				   aarch64_opnd_info *info, aarch64_insn code,
+				   const aarch64_inst *inst ATTRIBUTE_UNUSED,
+				   aarch64_operand_error *errors
+				     ATTRIBUTE_UNUSED)
+{
+  int ebytes = aarch64_get_qualifier_esize (info->qualifier);
+  int range_size = get_opcode_dependent_value (inst->opcode);
+  int fld_v = extract_field (self->fields[0], code, 0);
+  int fld_rv = extract_field (self->fields[1], code, 0);
+  int fld_zan_imm = extract_field (self->fields[2], code, 0);
+  int max_value = 16 / range_size / ebytes;
+
+  if (max_value == 0)
+    max_value = 1;
+
+  int regno = fld_zan_imm / max_value;
+  if (regno >= ebytes)
+    return false;
+
+  info->indexed_za.regno = regno;
+  info->indexed_za.index.imm = (fld_zan_imm % max_value) * range_size;
+  info->indexed_za.index.countm1 = range_size - 1;
+  info->indexed_za.index.regno = fld_rv + 12;
+  info->indexed_za.v = fld_v;
 
   return true;
 }
@@ -1837,18 +1900,27 @@ aarch64_ext_sme_za_list (const aarch64_operand *self,
 }
 
 /* Decode ZA array vector select register (Rv field), optional vector and
-   memory offset (imm4 field).
+   memory offset (imm4_11 field).
 */
 bool
 aarch64_ext_sme_za_array (const aarch64_operand *self,
                           aarch64_opnd_info *info, aarch64_insn code,
-                          const aarch64_inst *inst ATTRIBUTE_UNUSED,
+                          const aarch64_inst *inst,
                           aarch64_operand_error *errors ATTRIBUTE_UNUSED)
 {
-  int regno = extract_field (self->fields[0], code, 0) + 12;
+  int regno = extract_field (self->fields[0], code, 0);
+  if (info->type == AARCH64_OPND_SME_ZA_array_off4)
+    regno += 12;
+  else
+    regno += 8;
   int imm = extract_field (self->fields[1], code, 0);
-  info->za_tile_vector.index.regno = regno;
-  info->za_tile_vector.index.imm = imm;
+  int num_offsets = get_operand_specific_data (self);
+  if (num_offsets == 0)
+    num_offsets = 1;
+  info->indexed_za.index.regno = regno;
+  info->indexed_za.index.imm = imm * num_offsets;
+  info->indexed_za.index.countm1 = num_offsets - 1;
+  info->indexed_za.group_size = get_opcode_dependent_value (inst->opcode);
   return true;
 }
 
@@ -1902,33 +1974,21 @@ aarch64_ext_sme_pred_reg_with_index (const aarch64_operand *self,
   aarch64_insn fld_tszl = extract_field (self->fields[4], code, 0);
   int imm;
 
-  info->za_tile_vector.regno = fld_pn;
-  info->za_tile_vector.index.regno = fld_rm + 12;
+  info->indexed_za.regno = fld_pn;
+  info->indexed_za.index.regno = fld_rm + 12;
 
-  if (fld_tszh == 0x1 && fld_tszl == 0x0)
-    {
-      info->qualifier = AARCH64_OPND_QLF_S_D;
-      imm = fld_i1;
-    }
-  else if (fld_tszl == 0x4)
-    {
-      info->qualifier = AARCH64_OPND_QLF_S_S;
-      imm = (fld_i1 << 1) | fld_tszh;
-    }
-  else if ((fld_tszl & 0x3) == 0x2)
-    {
-      info->qualifier = AARCH64_OPND_QLF_S_H;
-      imm = (fld_i1 << 2) | (fld_tszh << 1) | (fld_tszl >> 2);
-    }
-  else if (fld_tszl & 0x1)
-    {
-      info->qualifier = AARCH64_OPND_QLF_S_B;
-      imm = (fld_i1 << 3) | (fld_tszh << 2) | (fld_tszl >> 1);
-    }
+  if (fld_tszl & 0x1)
+    imm = (fld_i1 << 3) | (fld_tszh << 2) | (fld_tszl >> 1);
+  else if (fld_tszl & 0x2)
+    imm = (fld_i1 << 2) | (fld_tszh << 1) | (fld_tszl >> 2);
+  else if (fld_tszl & 0x4)
+    imm = (fld_i1 << 1) | fld_tszh;
+  else if (fld_tszh)
+    imm = fld_i1;
   else
     return false;
 
-  info->za_tile_vector.index.imm = imm;
+  info->indexed_za.index.imm = imm;
   return true;
 }
 
@@ -1993,6 +2053,25 @@ aarch64_ext_sve_reglist (const aarch64_operand *self,
 {
   info->reglist.first_regno = extract_field (self->fields[0], code, 0);
   info->reglist.num_regs = get_opcode_dependent_value (inst->opcode);
+  info->reglist.stride = 1;
+  return true;
+}
+
+/* Decode a strided register list.  The first field holds the top bit
+   (0 or 16) and the second field holds the lower bits.  The stride is
+   16 divided by the list length.  */
+bool
+aarch64_ext_sve_strided_reglist (const aarch64_operand *self,
+				 aarch64_opnd_info *info, aarch64_insn code,
+				 const aarch64_inst *inst ATTRIBUTE_UNUSED,
+				 aarch64_operand_error *errors
+				   ATTRIBUTE_UNUSED)
+{
+  unsigned int upper = extract_field (self->fields[0], code, 0);
+  unsigned int lower = extract_field (self->fields[1], code, 0);
+  info->reglist.first_regno = upper * 16 + lower;
+  info->reglist.num_regs = get_operand_specific_data (self);
+  info->reglist.stride = 16 / info->reglist.num_regs;
   return true;
 }
 
@@ -2063,6 +2142,33 @@ aarch64_ext_x0_to_x30 (const aarch64_operand *self, aarch64_opnd_info *info,
 {
   info->reg.regno = extract_field (self->fields[0], code, 0);
   return info->reg.regno <= 30;
+}
+
+/* Decode an indexed register, with the first field being the register
+   number and the remaining fields being the index.  */
+bool
+aarch64_ext_simple_index (const aarch64_operand *self, aarch64_opnd_info *info,
+			  const aarch64_insn code,
+			  const aarch64_inst *inst ATTRIBUTE_UNUSED,
+			  aarch64_operand_error *errors ATTRIBUTE_UNUSED)
+{
+  int bias = get_operand_specific_data (self);
+  info->reglane.regno = extract_field (self->fields[0], code, 0) + bias;
+  info->reglane.index = extract_all_fields_after (self, 1, code);
+  return true;
+}
+
+/* Decode a plain shift-right immediate, when there is only a single
+   element size.  */
+bool
+aarch64_ext_plain_shrimm (const aarch64_operand *self, aarch64_opnd_info *info,
+			  const aarch64_insn code,
+			  const aarch64_inst *inst ATTRIBUTE_UNUSED,
+			  aarch64_operand_error *errors ATTRIBUTE_UNUSED)
+{
+  unsigned int base = 1 << get_operand_field_width (self, 0);
+  info->imm.value = base - extract_field (self->fields[0], code, 0);
+  return true;
 }
 
 /* Bitfields that are commonly used to encode certain operands' information
@@ -2680,7 +2786,7 @@ convert_csinc_to_cset (aarch64_inst *inst)
 
 /* MOV <Wd>, #<imm>
      is equivalent to:
-   MOVZ <Wd>, #<imm16>, LSL #<shift>.
+   MOVZ <Wd>, #<imm16_5>, LSL #<shift>.
 
    A disassembler may output ORR, MOVZ and MOVN as a MOV mnemonic, except when
    ORR has an immediate that could be generated by a MOVZ or MOVN instruction,
@@ -2966,6 +3072,57 @@ aarch64_decode_variant_using_iclass (aarch64_inst *inst)
   variant = 0;
   switch (inst->opcode->iclass)
     {
+    case sme_mov:
+      variant = extract_fields (inst->value, 0, 2, FLD_SME_Q, FLD_SME_size_22);
+      if (variant >= 4 && variant < 7)
+	return false;
+      if (variant == 7)
+	variant = 4;
+      break;
+
+    case sme_psel:
+      i = extract_fields (inst->value, 0, 2, FLD_SME_tszh, FLD_SME_tszl);
+      if (i == 0)
+	return false;
+      while ((i & 1) == 0)
+	{
+	  i >>= 1;
+	  variant += 1;
+	}
+      break;
+
+    case sme_shift:
+      i = extract_field (FLD_SVE_tszh, inst->value, 0);
+      goto sve_shift;
+
+    case sme_size_12_bhs:
+      variant = extract_field (FLD_SME_size_12, inst->value, 0);
+      if (variant >= 3)
+	return false;
+      break;
+
+    case sme_size_12_hs:
+      variant = extract_field (FLD_SME_size_12, inst->value, 0);
+      if (variant != 1 && variant != 2)
+	return false;
+      variant -= 1;
+      break;
+
+    case sme_size_22:
+      variant = extract_field (FLD_SME_size_22, inst->value, 0);
+      break;
+
+    case sme_size_22_hsd:
+      variant = extract_field (FLD_SME_size_22, inst->value, 0);
+      if (variant < 1)
+	return false;
+      variant -= 1;
+      break;
+
+    case sme_sz_23:
+      variant = extract_field (FLD_SME_sz_23, inst->value, 0);
+      break;
+
     case sve_cpy:
       variant = extract_fields (inst->value, 0, 2, FLD_size, FLD_SVE_M_14);
       break;
@@ -2993,8 +3150,14 @@ aarch64_decode_variant_using_iclass (aarch64_inst *inst)
 	variant = 3;
       break;
 
+    case sme2_mov:
+      /* .D is preferred over the other sizes in disassembly.  */
+      variant = 3;
+      break;
+
+    case sme_misc:
     case sve_misc:
-      /* sve_misc instructions have only a single variant.  */
+      /* These instructions have only a single variant.  */
       break;
 
     case sve_movprfx:
@@ -3038,6 +3201,8 @@ aarch64_decode_variant_using_iclass (aarch64_inst *inst)
       variant = i - 1;
       break;
 
+    case sme_fp_sd:
+    case sme_int_sd:
     case sve_size_bh:
     case sve_size_sd:
       variant = extract_field (FLD_SVE_sz, inst->value, 0);
@@ -3275,6 +3440,90 @@ aarch64_decode_insn (aarch64_insn insn, aarch64_inst *inst,
   return ERR_UND;
 }
 
+/* Return a short string to indicate a switch to STYLE.  These strings
+   will be embedded into the disassembled operand text (as produced by
+   aarch64_print_operand), and then spotted in the print_operands function
+   so that the disassembler output can be split by style.  */
+
+static const char *
+get_style_text (enum disassembler_style style)
+{
+  static bool init = false;
+  static char formats[16][4];
+  unsigned num;
+
+  /* First time through we build a string for every possible format.  This
+     code relies on there being no more than 16 different styles (there's
+     an assert below for this).  */
+  if (!init)
+    {
+      int i;
+
+      for (i = 0; i <= 0xf; ++i)
+	{
+	  int res = snprintf (&formats[i][0], sizeof (formats[i]), "%c%x%c",
+			      STYLE_MARKER_CHAR, i, STYLE_MARKER_CHAR);
+	  assert (res == 3);
+	}
+
+      init = true;
+    }
+
+  /* Return the string that marks switching to STYLE.  */
+  num = (unsigned) style;
+  assert (style <= 0xf);
+  return formats[num];
+}
+
+/* Callback used by aarch64_print_operand to apply STYLE to the
+   disassembler output created from FMT and ARGS.  The STYLER object holds
+   any required state.  Must return a pointer to a string (created from FMT
+   and ARGS) that will continue to be valid until the complete disassembled
+   instruction has been printed.
+
+   We return a string that includes two embedded style markers, the first,
+   places at the start of the string, indicates a switch to STYLE, and the
+   second, placed at the end of the string, indicates a switch back to the
+   default text style.
+
+   Later, when we print the operand text we take care to collapse any
+   adjacent style markers, and to ignore any style markers that appear at
+   the very end of a complete operand string.  */
+
+static const char *aarch64_apply_style (struct aarch64_styler *styler,
+					enum disassembler_style style,
+					const char *fmt,
+					va_list args)
+{
+  int res;
+  char *ptr, *tmp;
+  struct obstack *stack = (struct obstack *) styler->state;
+  va_list ap;
+
+  /* These are the two strings for switching styles.  */
+  const char *style_on = get_style_text (style);
+  const char *style_off = get_style_text (dis_style_text);
+
+  /* Calculate space needed once FMT and ARGS are expanded.  */
+  va_copy (ap, args);
+  res = vsnprintf (NULL, 0, fmt, ap);
+  va_end (ap);
+  assert (res >= 0);
+
+  /* Allocate space on the obstack for the expanded FMT and ARGS, as well
+     as the two strings for switching styles, then write all of these
+     strings onto the obstack.  */
+  ptr = (char *) obstack_alloc (stack, res + strlen (style_on)
+				+ strlen (style_off) + 1);
+  tmp = stpcpy (ptr, style_on);
+  res = vsnprintf (tmp, (res + 1), fmt, args);
+  assert (res >= 0);
+  tmp += res;
+  strcpy (tmp, style_off);
+
+  return ptr;
+}
+
 /* Print operands.  */
 
 static void
@@ -3284,9 +3533,18 @@ print_operands (bfd_vma pc, const aarch64_opcode *opcode,
 {
   char *notes = NULL;
   int i, pcrel_p, num_printed;
+  struct aarch64_styler styler;
+  struct obstack content;
+  obstack_init (&content);
+
+  styler.apply_style = aarch64_apply_style;
+  styler.state = (void *) &content;
+
   for (i = 0, num_printed = 0; i < AARCH64_MAX_OPND_NUM; ++i)
     {
       char str[128];
+      char cmt[128];
+
       /* We regard the opcode operand info more, however we also look into
 	 the inst->operands to support the disassembling of the optional
 	 operand.
@@ -3298,25 +3556,98 @@ print_operands (bfd_vma pc, const aarch64_opcode *opcode,
 
       /* Generate the operand string in STR.  */
       aarch64_print_operand (str, sizeof (str), pc, opcode, opnds, i, &pcrel_p,
-			     &info->target, &notes, arch_variant);
+			     &info->target, &notes, cmt, sizeof (cmt),
+			     arch_variant, &styler);
 
       /* Print the delimiter (taking account of omitted operand(s)).  */
       if (str[0] != '\0')
-	(*info->fprintf_func) (info->stream, "%s",
-			       num_printed++ == 0 ? "\t" : ", ");
+	(*info->fprintf_styled_func) (info->stream, dis_style_text, "%s",
+				      num_printed++ == 0 ? "\t" : ", ");
 
       /* Print the operand.  */
       if (pcrel_p)
 	(*info->print_address_func) (info->target, info);
       else
-	(*info->fprintf_func) (info->stream, "%s", str);
+	{
+	  /* This operand came from aarch64_print_operand, and will include
+	     embedded strings indicating which style each character should
+	     have.  In the following code we split the text based on
+	     CURR_STYLE, and call the styled print callback to print each
+	     block of text in the appropriate style.  */
+	  char *start, *curr;
+	  enum disassembler_style curr_style = dis_style_text;
+
+	  start = curr = str;
+	  do
+	    {
+	      if (*curr == '\0'
+		  || (*curr == STYLE_MARKER_CHAR
+		      && ISXDIGIT (*(curr + 1))
+		      && *(curr + 2) == STYLE_MARKER_CHAR))
+		{
+		  /* Output content between our START position and CURR.  */
+		  int len = curr - start;
+		  if (len > 0)
+		    {
+		      if ((*info->fprintf_styled_func) (info->stream,
+							curr_style,
+							"%.*s",
+							len, start) < 0)
+			break;
+		    }
+
+		  if (*curr == '\0')
+		    break;
+
+		  /* Skip over the initial STYLE_MARKER_CHAR.  */
+		  ++curr;
+
+		  /* Update the CURR_STYLE.  As there are less than 16
+		     styles, it is possible, that if the input is corrupted
+		     in some way, that we might set CURR_STYLE to an
+		     invalid value.  Don't worry though, we check for this
+		     situation.  */
+		  if (*curr >= '0' && *curr <= '9')
+		    curr_style = (enum disassembler_style) (*curr - '0');
+		  else if (*curr >= 'a' && *curr <= 'f')
+		    curr_style = (enum disassembler_style) (*curr - 'a' + 10);
+		  else
+		    curr_style = dis_style_text;
+
+		  /* Check for an invalid style having been selected.  This
+		     should never happen, but it doesn't hurt to be a
+		     little paranoid.  */
+		  if (curr_style > dis_style_comment_start)
+		    curr_style = dis_style_text;
+
+		  /* Skip the hex character, and the closing STYLE_MARKER_CHAR.  */
+		  curr += 2;
+
+		  /* Reset the START to after the style marker.  */
+		  start = curr;
+		}
+	      else
+		++curr;
+	    }
+	  while (true);
+	}
+
+      /* Print the comment.  This works because only the last operand ever
+	 adds a comment.  If that ever changes then we'll need to be
+	 smarter here.  */
+      if (cmt[0] != '\0')
+	(*info->fprintf_styled_func) (info->stream, dis_style_comment_start,
+				      "\t// %s", cmt);
     }
 
     if (notes && !no_notes)
       {
 	*has_notes = true;
-	(*info->fprintf_func) (info->stream, "  // note: %s", notes);
+	(*info->fprintf_styled_func) (info->stream, dis_style_comment_start,
+				      "  // note: %s", notes);
       }
+
+    obstack_free (&content, NULL);
 }
 
 /* Set NAME to a copy of INST's mnemonic with the "." suffix removed.  */
@@ -3348,10 +3679,12 @@ print_mnemonic_name (const aarch64_inst *inst, struct disassemble_info *info)
       char name[8];
 
       remove_dot_suffix (name, inst);
-      (*info->fprintf_func) (info->stream, "%s.%s", name, inst->cond->names[0]);
+      (*info->fprintf_styled_func) (info->stream, dis_style_mnemonic,
+				    "%s.%s", name, inst->cond->names[0]);
     }
   else
-    (*info->fprintf_func) (info->stream, "%s", inst->opcode->name);
+    (*info->fprintf_styled_func) (info->stream, dis_style_mnemonic,
+				  "%s", inst->opcode->name);
 }
 
 /* Decide whether we need to print a comment after the operands of
@@ -3368,9 +3701,10 @@ print_comment (const aarch64_inst *inst, struct disassemble_info *info)
       remove_dot_suffix (name, inst);
       num_conds = ARRAY_SIZE (inst->cond->names);
       for (i = 1; i < num_conds && inst->cond->names[i]; ++i)
-	(*info->fprintf_func) (info->stream, "%s %s.%s",
-			       i == 1 ? "  //" : ",",
-			       name, inst->cond->names[i]);
+	(*info->fprintf_styled_func) (info->stream, dis_style_comment_start,
+				      "%s %s.%s",
+				      i == 1 ? "  //" : ",",
+				      name, inst->cond->names[i]);
     }
 }
 
@@ -3387,28 +3721,30 @@ print_verifier_notes (aarch64_operand_error *detail,
      would not have succeeded.  We can safely ignore these.  */
   assert (detail->non_fatal);
 
-  (*info->fprintf_func) (info->stream, "  // note: ");
+  (*info->fprintf_styled_func) (info->stream, dis_style_comment_start,
+				"  // note: ");
   switch (detail->kind)
     {
     case AARCH64_OPDE_A_SHOULD_FOLLOW_B:
-      (*info->fprintf_func) (info->stream,
-			     _("this `%s' should have an immediately"
-			       " preceding `%s'"),
-			     detail->data[0].s, detail->data[1].s);
+      (*info->fprintf_styled_func) (info->stream, dis_style_text,
+				    _("this `%s' should have an immediately"
+				      " preceding `%s'"),
+				    detail->data[0].s, detail->data[1].s);
       break;
 
     case AARCH64_OPDE_EXPECTED_A_AFTER_B:
-      (*info->fprintf_func) (info->stream,
-			     _("expected `%s' after previous `%s'"),
-			     detail->data[0].s, detail->data[1].s);
+      (*info->fprintf_styled_func) (info->stream, dis_style_text,
+				    _("expected `%s' after previous `%s'"),
+				    detail->data[0].s, detail->data[1].s);
       break;
 
     default:
       assert (detail->error);
-      (*info->fprintf_func) (info->stream, "%s", detail->error);
+      (*info->fprintf_styled_func) (info->stream, dis_style_text,
+				    "%s", detail->error);
       if (detail->index >= 0)
-	(*info->fprintf_func) (info->stream, " at operand %d",
-			       detail->index + 1);
+	(*info->fprintf_styled_func) (info->stream, dis_style_text,
+				      " at operand %d", detail->index + 1);
       break;
     }
 }
@@ -3500,8 +3836,13 @@ print_insn_aarch64_word (bfd_vma pc,
     case ERR_NYI:
       /* Handle undefined instructions.  */
       info->insn_type = dis_noninsn;
-      (*info->fprintf_func) (info->stream,".inst\t0x%08x ; %s",
-			     word, err_msg[ret]);
+      (*info->fprintf_styled_func) (info->stream,
+				    dis_style_assembler_directive,
+				    ".inst\t");
+      (*info->fprintf_styled_func) (info->stream, dis_style_immediate,
+				    "0x%08x", word);
+      (*info->fprintf_styled_func) (info->stream, dis_style_comment_start,
+				    " ; %s", err_msg[ret]);
       break;
     case ERR_OK:
       user_friendly_fixup (&inst);
@@ -3543,13 +3884,22 @@ print_insn_data (bfd_vma pc ATTRIBUTE_UNUSED,
   switch (info->bytes_per_chunk)
     {
     case 1:
-      info->fprintf_func (info->stream, ".byte\t0x%02x", word);
+      info->fprintf_styled_func (info->stream, dis_style_assembler_directive,
+				 ".byte\t");
+      info->fprintf_styled_func (info->stream, dis_style_immediate,
+				 "0x%02x", word);
       break;
     case 2:
-      info->fprintf_func (info->stream, ".short\t0x%04x", word);
+      info->fprintf_styled_func (info->stream, dis_style_assembler_directive,
+				 ".short\t");
+      info->fprintf_styled_func (info->stream, dis_style_immediate,
+				 "0x%04x", word);
       break;
     case 4:
-      info->fprintf_func (info->stream, ".word\t0x%08x", word);
+      info->fprintf_styled_func (info->stream, dis_style_assembler_directive,
+				 ".word\t");
+      info->fprintf_styled_func (info->stream, dis_style_immediate,
+				 "0x%08x", word);
       break;
     default:
       abort ();

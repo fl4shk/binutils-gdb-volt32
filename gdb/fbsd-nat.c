@@ -1,6 +1,6 @@
 /* Native-dependent code for FreeBSD.
 
-   Copyright (C) 2002-2022 Free Software Foundation, Inc.
+   Copyright (C) 2002-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -125,7 +125,7 @@ fbsd_nat_target::find_memory_regions (find_memory_region_ftype func,
 	 Pass MODIFIED as true, we do not know the real modification state.  */
       func (kve->kve_start, size, kve->kve_protection & KVME_PROT_READ,
 	    kve->kve_protection & KVME_PROT_WRITE,
-	    kve->kve_protection & KVME_PROT_EXEC, 1, data);
+	    kve->kve_protection & KVME_PROT_EXEC, 1, false, data);
     }
   return 0;
 }
@@ -852,23 +852,23 @@ fbsd_enable_proc_events (pid_t pid)
 #ifdef PT_GET_EVENT_MASK
   int events;
 
-  if (ptrace (PT_GET_EVENT_MASK, pid, (PTRACE_TYPE_ARG3)&events,
+  if (ptrace (PT_GET_EVENT_MASK, pid, (PTRACE_TYPE_ARG3) &events,
 	      sizeof (events)) == -1)
     perror_with_name (("ptrace (PT_GET_EVENT_MASK)"));
   events |= PTRACE_FORK | PTRACE_LWP;
 #ifdef PTRACE_VFORK
   events |= PTRACE_VFORK;
 #endif
-  if (ptrace (PT_SET_EVENT_MASK, pid, (PTRACE_TYPE_ARG3)&events,
+  if (ptrace (PT_SET_EVENT_MASK, pid, (PTRACE_TYPE_ARG3) &events,
 	      sizeof (events)) == -1)
     perror_with_name (("ptrace (PT_SET_EVENT_MASK)"));
 #else
 #ifdef TDP_RFPPWAIT
-  if (ptrace (PT_FOLLOW_FORK, pid, (PTRACE_TYPE_ARG3)0, 1) == -1)
+  if (ptrace (PT_FOLLOW_FORK, pid, (PTRACE_TYPE_ARG3) 0, 1) == -1)
     perror_with_name (("ptrace (PT_FOLLOW_FORK)"));
 #endif
 #ifdef PT_LWP_EVENTS
-  if (ptrace (PT_LWP_EVENTS, pid, (PTRACE_TYPE_ARG3)0, 1) == -1)
+  if (ptrace (PT_LWP_EVENTS, pid, (PTRACE_TYPE_ARG3) 0, 1) == -1)
     perror_with_name (("ptrace (PT_LWP_EVENTS)"));
 #endif
 #endif
@@ -971,9 +971,9 @@ handle_target_event (int error, gdb_client_data client_data)
 /* Implement the "async" target method.  */
 
 void
-fbsd_nat_target::async (int enable)
+fbsd_nat_target::async (bool enable)
 {
-  if ((enable != 0) == is_async_p ())
+  if (enable == is_async_p ())
     return;
 
   /* Block SIGCHILD while we create/destroy the pipe, as the handler
@@ -983,7 +983,7 @@ fbsd_nat_target::async (int enable)
   if (enable)
     {
       if (!async_file_open ())
-	internal_error (__FILE__, __LINE__, "failed to create event pipe.");
+	internal_error ("failed to create event pipe.");
 
       add_file_handler (async_wait_fd (), handle_target_event, NULL, "fbsd-nat");
 
@@ -1261,7 +1261,7 @@ fbsd_nat_target::wait_1 (ptid_t ptid, struct target_waitstatus *ourstatus,
       wptid = fbsd_next_vfork_done ();
       if (wptid != null_ptid)
 	{
-	  ourstatus->kind = TARGET_WAITKIND_VFORK_DONE;
+	  ourstatus->set_vfork_done ();
 	  return wptid;
 	}
 #endif
@@ -1295,7 +1295,7 @@ fbsd_nat_target::wait_1 (ptid_t ptid, struct target_waitstatus *ourstatus,
 		 threads might be skipped during post_attach that
 		 have not yet reported their PL_FLAG_EXITED event.
 		 Ignore EXITED events for an unknown LWP.  */
-	      thread_info *thr = find_thread_ptid (this, wptid);
+	      thread_info *thr = this->find_thread (wptid);
 	      if (thr != nullptr)
 		{
 		  fbsd_lwp_debug_printf ("deleting thread for LWP %u",
@@ -1369,7 +1369,7 @@ fbsd_nat_target::wait_1 (ptid_t ptid, struct target_waitstatus *ourstatus,
 
 		  gdb_assert (pid == child);
 
-		  if (ptrace (PT_LWPINFO, child, (caddr_t)&pl, sizeof pl) == -1)
+		  if (ptrace (PT_LWPINFO, child, (caddr_t) &pl, sizeof pl) == -1)
 		    perror_with_name (("ptrace (PT_LWPINFO)"));
 
 		  gdb_assert (pl.pl_flags & PL_FLAG_CHILD);
@@ -1439,7 +1439,7 @@ fbsd_nat_target::wait_1 (ptid_t ptid, struct target_waitstatus *ourstatus,
 	     SIGTRAP, so only treat SIGTRAP events as system call
 	     entry/exit events.  */
 	  if (pl.pl_flags & (PL_FLAG_SCE | PL_FLAG_SCX)
-	      && ourstatus->sig () == SIGTRAP)
+	      && ourstatus->sig () == GDB_SIGNAL_TRAP)
 	    {
 #ifdef HAVE_STRUCT_PTRACE_LWPINFO_PL_SYSCALL_CODE
 	      if (catch_syscall_enabled ())
@@ -1489,7 +1489,7 @@ fbsd_nat_target::wait (ptid_t ptid, struct target_waitstatus *ourstatus,
      event loop keeps polling until no event is returned.  */
   if (is_async_p ()
       && ((ourstatus->kind () != TARGET_WAITKIND_IGNORE
-	  && ourstatus->kind() != TARGET_WAITKIND_NO_RESUMED)
+	  && ourstatus->kind () != TARGET_WAITKIND_NO_RESUMED)
 	  || ptid != minus_one_ptid))
     async_file_mark ();
 
@@ -1607,7 +1607,7 @@ fbsd_nat_target::follow_fork (inferior *child_inf, ptid_t child_ptid,
       /* Breakpoints have already been detached from the child by
 	 infrun.c.  */
 
-      if (ptrace (PT_DETACH, child_pid, (PTRACE_TYPE_ARG3)1, 0) == -1)
+      if (ptrace (PT_DETACH, child_pid, (PTRACE_TYPE_ARG3) 1, 0) == -1)
 	perror_with_name (("ptrace (PT_DETACH)"));
 
 #ifndef PTRACE_VFORK
@@ -1732,19 +1732,20 @@ fbsd_nat_target::supports_disable_randomization ()
 bool
 fbsd_nat_target::fetch_register_set (struct regcache *regcache, int regnum,
 				     int fetch_op, const struct regset *regset,
-				     void *regs, size_t size)
+				     int regbase, void *regs, size_t size)
 {
   const struct regcache_map_entry *map
     = (const struct regcache_map_entry *) regset->regmap;
   pid_t pid = get_ptrace_pid (regcache->ptid ());
 
-  if (regnum == -1 || regcache_map_supplies (map, regnum, regcache->arch(),
-					     size))
+  if (regnum == -1
+      || (regnum >= regbase && regcache_map_supplies (map, regnum - regbase,
+						      regcache->arch (), size)))
     {
       if (ptrace (fetch_op, pid, (PTRACE_TYPE_ARG3) regs, 0) == -1)
 	perror_with_name (_("Couldn't get registers"));
 
-      regcache->supply_regset (regset, regnum, regs, size);
+      regset->supply_regset (regset, regcache, regnum, regs, size);
       return true;
     }
   return false;
@@ -1755,20 +1756,21 @@ fbsd_nat_target::fetch_register_set (struct regcache *regcache, int regnum,
 bool
 fbsd_nat_target::store_register_set (struct regcache *regcache, int regnum,
 				     int fetch_op, int store_op,
-				     const struct regset *regset, void *regs,
-				     size_t size)
+				     const struct regset *regset, int regbase,
+				     void *regs, size_t size)
 {
   const struct regcache_map_entry *map
     = (const struct regcache_map_entry *) regset->regmap;
   pid_t pid = get_ptrace_pid (regcache->ptid ());
 
-  if (regnum == -1 || regcache_map_supplies (map, regnum, regcache->arch(),
-					     size))
+  if (regnum == -1
+      || (regnum >= regbase && regcache_map_supplies (map, regnum - regbase,
+						      regcache->arch (), size)))
     {
       if (ptrace (fetch_op, pid, (PTRACE_TYPE_ARG3) regs, 0) == -1)
 	perror_with_name (_("Couldn't get registers"));
 
-      regcache->collect_regset (regset, regnum, regs, size);
+      regset->collect_regset (regset, regcache, regnum, regs, size);
 
       if (ptrace (store_op, pid, (PTRACE_TYPE_ARG3) regs, 0) == -1)
 	perror_with_name (_("Couldn't write registers"));
@@ -1779,7 +1781,7 @@ fbsd_nat_target::store_register_set (struct regcache *regcache, int regnum,
 
 /* See fbsd-nat.h.  */
 
-bool
+size_t
 fbsd_nat_target::have_regset (ptid_t ptid, int note)
 {
   pid_t pid = get_ptrace_pid (ptid);
@@ -1796,15 +1798,16 @@ fbsd_nat_target::have_regset (ptid_t ptid, int note)
 
 bool
 fbsd_nat_target::fetch_regset (struct regcache *regcache, int regnum, int note,
-			       const struct regset *regset, void *regs,
-			       size_t size)
+			       const struct regset *regset, int regbase,
+			       void *regs, size_t size)
 {
   const struct regcache_map_entry *map
     = (const struct regcache_map_entry *) regset->regmap;
   pid_t pid = get_ptrace_pid (regcache->ptid ());
 
-  if (regnum == -1 || regcache_map_supplies (map, regnum, regcache->arch(),
-					     size))
+  if (regnum == -1
+      || (regnum >= regbase && regcache_map_supplies (map, regnum - regbase,
+						      regcache->arch (), size)))
     {
       struct iovec iov;
 
@@ -1813,7 +1816,7 @@ fbsd_nat_target::fetch_regset (struct regcache *regcache, int regnum, int note,
       if (ptrace (PT_GETREGSET, pid, (PTRACE_TYPE_ARG3) &iov, note) == -1)
 	perror_with_name (_("Couldn't get registers"));
 
-      regcache->supply_regset (regset, regnum, regs, size);
+      regset->supply_regset (regset, regcache, regnum, regs, size);
       return true;
     }
   return false;
@@ -1821,15 +1824,16 @@ fbsd_nat_target::fetch_regset (struct regcache *regcache, int regnum, int note,
 
 bool
 fbsd_nat_target::store_regset (struct regcache *regcache, int regnum, int note,
-			       const struct regset *regset, void *regs,
-			       size_t size)
+			       const struct regset *regset, int regbase,
+			       void *regs, size_t size)
 {
   const struct regcache_map_entry *map
     = (const struct regcache_map_entry *) regset->regmap;
   pid_t pid = get_ptrace_pid (regcache->ptid ());
 
-  if (regnum == -1 || regcache_map_supplies (map, regnum, regcache->arch(),
-					     size))
+  if (regnum == -1
+      || (regnum >= regbase && regcache_map_supplies (map, regnum - regbase,
+						      regcache->arch (), size)))
     {
       struct iovec iov;
 
@@ -1838,7 +1842,7 @@ fbsd_nat_target::store_regset (struct regcache *regcache, int regnum, int note,
       if (ptrace (PT_GETREGSET, pid, (PTRACE_TYPE_ARG3) &iov, note) == -1)
 	perror_with_name (_("Couldn't get registers"));
 
-      regcache->collect_regset (regset, regnum, regs, size);
+      regset->collect_regset (regset, regcache, regnum, regs, size);
 
       if (ptrace (PT_SETREGSET, pid, (PTRACE_TYPE_ARG3) &iov, note) == -1)
 	perror_with_name (_("Couldn't write registers"));

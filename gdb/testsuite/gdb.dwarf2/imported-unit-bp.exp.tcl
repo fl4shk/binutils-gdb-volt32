@@ -1,4 +1,4 @@
-# Copyright 2020-2022 Free Software Foundation, Inc.
+# Copyright 2020-2023 Free Software Foundation, Inc.
 
 # This program is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -23,10 +23,7 @@ if {![dwarf2_support]} {
 }
 
 # The .c files use __attribute__.
-if [get_compiler_info] {
-    return -1
-}
-if !$gcc_compiled {
+if ![is_c_compiler_gcc] {
     return 0
 }
 
@@ -124,6 +121,11 @@ if { [prepare_for_testing "failed to prepare" ${testfile} \
 }
 
 gdb_reinitialize_dir /tmp
+
+# Compilation on remote host downloads the source files to remote host, but
+# doesn't clean them up, allowing gdb to find $srcfile, in contrast to
+# non-remote host.
+remote_file host delete $srcfile
 
 # Using an absolute path is important to see the bug.
 gdb_test "break /tmp/${srcfile}:19" "Breakpoint .* file $srcfile, line .*"

@@ -1,5 +1,5 @@
 /* AArch64-specific support for NN-bit ELF.
-   Copyright (C) 2009-2022 Free Software Foundation, Inc.
+   Copyright (C) 2009-2023 Free Software Foundation, Inc.
    Contributed by ARM Ltd.
 
    This file is part of BFD, the Binary File Descriptor library.
@@ -2354,6 +2354,9 @@ elfNN_aarch64_reloc_name_lookup (bfd *abfd ATTRIBUTE_UNUSED,
    name can be changed. The only requirement is the %s be present.  */
 #define STUB_ENTRY_NAME   "__%s_veneer"
 
+/* Stub name for a BTI landing stub.  */
+#define BTI_STUB_ENTRY_NAME   "__%s_bti_veneer"
+
 /* The name of the dynamic interpreter.  This is put in the .interp
    section.  */
 #define ELF_DYNAMIC_INTERPRETER     "/lib/ld.so.1"
@@ -2406,6 +2409,12 @@ static const uint32_t aarch64_long_branch_stub[] =
   0x00000000,
 };
 
+static const uint32_t aarch64_bti_direct_branch_stub[] =
+{
+  0xd503245f,			/*	bti	c */
+  0x14000000,			/*	b	<label> */
+};
+
 static const uint32_t aarch64_erratum_835769_stub[] =
 {
   0x00000000,    /* Placeholder for multiply accumulate.  */
@@ -2427,6 +2436,7 @@ enum elf_aarch64_stub_type
   aarch64_stub_none,
   aarch64_stub_adrp_branch,
   aarch64_stub_long_branch,
+  aarch64_stub_bti_direct_branch,
   aarch64_stub_erratum_835769_veneer,
   aarch64_stub_erratum_843419_veneer,
 };
@@ -2454,6 +2464,9 @@ struct elf_aarch64_stub_hash_entry
 
   /* Destination symbol type */
   unsigned char st_type;
+
+  /* The target is also a stub.  */
+  bool double_stub;
 
   /* Where this stub is being called from, or, in the case of combined
      stub sections, the first input section in the group.  */
@@ -2579,6 +2592,9 @@ struct elf_aarch64_link_hash_entry
      this symbol.  */
   unsigned int got_type;
 
+  /* TRUE if symbol is defined as a protected symbol.  */
+  unsigned int def_protected : 1;
+
   /* A pointer to the most recently used stub hash entry against this
      symbol.  */
   struct elf_aarch64_stub_hash_entry *stub_cache;
@@ -2676,6 +2692,11 @@ struct elf_aarch64_link_hash_table
   unsigned int top_index;
   asection **input_list;
 
+  /* True when two stubs are added where one targets the other, happens
+     when BTI stubs are inserted and then the stub layout must not change
+     during elfNN_aarch64_build_stubs.  */
+  bool has_double_stub;
+
   /* JUMP_SLOT relocs for variant PCS symbols may be present.  */
   int variant_pcs;
 
@@ -2712,6 +2733,7 @@ elfNN_aarch64_link_hash_newfunc (struct bfd_hash_entry *entry,
   if (ret != NULL)
     {
       ret->got_type = GOT_UNKNOWN;
+      ret->def_protected = 0;
       ret->plt_got_offset = (bfd_vma) - 1;
       ret->stub_cache = NULL;
       ret->tlsdesc_got_jump_table_offset = (bfd_vma) - 1;
@@ -2745,14 +2767,9 @@ stub_hash_newfunc (struct bfd_hash_entry *entry,
 
       /* Initialize the local fields.  */
       eh = (struct elf_aarch64_stub_hash_entry *) entry;
-      eh->adrp_offset = 0;
-      eh->stub_sec = NULL;
-      eh->stub_offset = 0;
-      eh->target_value = 0;
-      eh->target_section = NULL;
-      eh->stub_type = aarch64_stub_none;
-      eh->h = NULL;
-      eh->id_sec = NULL;
+      memset (&eh->stub_sec, 0,
+	      (sizeof (struct elf_aarch64_stub_hash_entry)
+	       - offsetof (struct elf_aarch64_stub_hash_entry, stub_sec)));
     }
 
   return entry;
@@ -2855,9 +2872,16 @@ elfNN_aarch64_copy_indirect_symbol (struct bfd_link_info *info,
 static void
 elfNN_aarch64_merge_symbol_attribute (struct elf_link_hash_entry *h,
 				      unsigned int st_other,
-				      bool definition ATTRIBUTE_UNUSED,
+				      bool definition,
 				      bool dynamic ATTRIBUTE_UNUSED)
 {
+  if (definition)
+    {
+      struct elf_aarch64_link_hash_entry *eh
+	  = (struct elf_aarch64_link_hash_entry *)h;
+      eh->def_protected = ELF_ST_VISIBILITY (st_other) == STV_PROTECTED;
+    }
+
   unsigned int isym_sto = st_other & ~ELF_ST_VISIBILITY (-1);
   unsigned int h_sto = h->other & ~ELF_ST_VISIBILITY (-1);
 
@@ -2963,14 +2987,6 @@ aarch64_relocate (unsigned int r_type, bfd *input_bfd, asection *input_section,
 				      howto, value) == bfd_reloc_ok;
 }
 
-static enum elf_aarch64_stub_type
-aarch64_select_branch_stub (bfd_vma value, bfd_vma place)
-{
-  if (aarch64_valid_for_adrp_p (value, place))
-    return aarch64_stub_adrp_branch;
-  return aarch64_stub_long_branch;
-}
-
 /* Determine the type of stub needed, if any, for a call.  */
 
 static enum elf_aarch64_stub_type
@@ -3026,21 +3042,21 @@ elfNN_aarch64_stub_name (const asection *input_section,
       len = 8 + 1 + strlen (hash->root.root.root.string) + 1 + 16 + 1;
       stub_name = bfd_malloc (len);
       if (stub_name != NULL)
-	snprintf (stub_name, len, "%08x_%s+%" BFD_VMA_FMT "x",
+	snprintf (stub_name, len, "%08x_%s+%" PRIx64,
 		  (unsigned int) input_section->id,
 		  hash->root.root.root.string,
-		  rel->r_addend);
+		  (uint64_t) rel->r_addend);
     }
   else
     {
       len = 8 + 1 + 8 + 1 + 8 + 1 + 16 + 1;
       stub_name = bfd_malloc (len);
       if (stub_name != NULL)
-	snprintf (stub_name, len, "%08x_%x:%x+%" BFD_VMA_FMT "x",
+	snprintf (stub_name, len, "%08x_%x:%x+%" PRIx64,
 		  (unsigned int) input_section->id,
 		  (unsigned int) sym_sec->id,
 		  (unsigned int) ELFNN_R_SYM (rel->r_info),
-		  rel->r_addend);
+		  (uint64_t) rel->r_addend);
     }
 
   return stub_name;
@@ -3240,25 +3256,32 @@ aarch64_build_one_stub (struct bfd_hash_entry *gen_entry,
   bfd_vma veneer_entry_loc;
   bfd_signed_vma branch_offset = 0;
   unsigned int template_size;
+  unsigned int pad_size = 0;
   const uint32_t *template;
   unsigned int i;
   struct bfd_link_info *info;
+  struct elf_aarch64_link_hash_table *htab;
 
   /* Massage our args to the form they really have.  */
   stub_entry = (struct elf_aarch64_stub_hash_entry *) gen_entry;
 
   info = (struct bfd_link_info *) in_arg;
+  htab = elf_aarch64_hash_table (info);
 
   /* Fail if the target section could not be assigned to an output
      section.  The user should fix his linker script.  */
   if (stub_entry->target_section->output_section == NULL
       && info->non_contiguous_regions)
-    info->callbacks->einfo (_("%F%P: Could not assign '%pA' to an output section. "
+    info->callbacks->einfo (_("%F%P: Could not assign `%pA' to an output section. "
 			      "Retry without "
 			      "--enable-non-contiguous-regions.\n"),
 			    stub_entry->target_section);
 
   stub_sec = stub_entry->stub_sec;
+
+  /* The layout must not change when a stub may be the target of another.  */
+  if (htab->has_double_stub)
+    BFD_ASSERT (stub_entry->stub_offset == stub_sec->size);
 
   /* Make a note of the offset within the stubs for this entry.  */
   stub_entry->stub_offset = stub_sec->size;
@@ -3278,7 +3301,14 @@ aarch64_build_one_stub (struct bfd_hash_entry *gen_entry,
 
       /* See if we can relax the stub.  */
       if (aarch64_valid_for_adrp_p (sym_value, place))
-	stub_entry->stub_type = aarch64_select_branch_stub (sym_value, place);
+	{
+	  stub_entry->stub_type = aarch64_stub_adrp_branch;
+
+	  /* Avoid the relaxation changing the layout.  */
+	  if (htab->has_double_stub)
+	    pad_size = sizeof (aarch64_long_branch_stub)
+		       - sizeof (aarch64_adrp_branch_stub);
+	}
     }
 
   switch (stub_entry->stub_type)
@@ -3290,6 +3320,10 @@ aarch64_build_one_stub (struct bfd_hash_entry *gen_entry,
     case aarch64_stub_long_branch:
       template = aarch64_long_branch_stub;
       template_size = sizeof (aarch64_long_branch_stub);
+      break;
+    case aarch64_stub_bti_direct_branch:
+      template = aarch64_bti_direct_branch_stub;
+      template_size = sizeof (aarch64_bti_direct_branch_stub);
       break;
     case aarch64_stub_erratum_835769_veneer:
       template = aarch64_erratum_835769_stub;
@@ -3309,6 +3343,7 @@ aarch64_build_one_stub (struct bfd_hash_entry *gen_entry,
       loc += 4;
     }
 
+  template_size += pad_size;
   template_size = (template_size + 7) & ~7;
   stub_sec->size += template_size;
 
@@ -3331,6 +3366,12 @@ aarch64_build_one_stub (struct bfd_hash_entry *gen_entry,
 	 value itself.  */
       if (!aarch64_relocate (AARCH64_R (PRELNN), stub_bfd, stub_sec,
 			     stub_entry->stub_offset + 16, sym_value + 12))
+	BFD_FAIL ();
+      break;
+
+    case aarch64_stub_bti_direct_branch:
+      if (!aarch64_relocate (AARCH64_R (JUMP26), stub_bfd, stub_sec,
+			     stub_entry->stub_offset + 4, sym_value))
 	BFD_FAIL ();
       break;
 
@@ -3364,7 +3405,8 @@ aarch64_build_one_stub (struct bfd_hash_entry *gen_entry,
 }
 
 /* As above, but don't actually build the stub.  Just bump offset so
-   we know stub section sizes.  */
+   we know stub section sizes and record the offset for each stub so
+   a stub can target another stub (needed for BTI direct branch stub).  */
 
 static bool
 aarch64_size_one_stub (struct bfd_hash_entry *gen_entry, void *in_arg)
@@ -3385,6 +3427,9 @@ aarch64_size_one_stub (struct bfd_hash_entry *gen_entry, void *in_arg)
     case aarch64_stub_long_branch:
       size = sizeof (aarch64_long_branch_stub);
       break;
+    case aarch64_stub_bti_direct_branch:
+      size = sizeof (aarch64_bti_direct_branch_stub);
+      break;
     case aarch64_stub_erratum_835769_veneer:
       size = sizeof (aarch64_erratum_835769_stub);
       break;
@@ -3400,8 +3445,18 @@ aarch64_size_one_stub (struct bfd_hash_entry *gen_entry, void *in_arg)
     }
 
   size = (size + 7) & ~7;
+  stub_entry->stub_offset = stub_entry->stub_sec->size;
   stub_entry->stub_sec->size += size;
   return true;
+}
+
+/* Output is BTI compatible.  */
+
+static bool
+elf_aarch64_bti_p (bfd *output_bfd)
+{
+  uint32_t prop = elf_aarch64_tdata (output_bfd)->gnu_and_prop;
+  return prop & GNU_PROPERTY_AARCH64_FEATURE_1_BTI;
 }
 
 /* External entry points for sizing and building linker stubs.  */
@@ -3609,6 +3664,44 @@ group_sections (struct elf_aarch64_link_hash_table *htab,
 
 #undef PREV_SEC
 #undef PREV_SEC
+
+#define AARCH64_HINT(insn) (((insn) & 0xfffff01f) == 0xd503201f)
+#define AARCH64_PACIASP 0xd503233f
+#define AARCH64_PACIBSP 0xd503237f
+#define AARCH64_BTI_C   0xd503245f
+#define AARCH64_BTI_J   0xd503249f
+#define AARCH64_BTI_JC  0xd50324df
+
+/* True if the inserted stub does not break BTI compatibility.  */
+
+static bool
+aarch64_bti_stub_p (bfd *input_bfd,
+		    struct elf_aarch64_stub_hash_entry *stub_entry)
+{
+  /* Stubs without indirect branch are BTI compatible.  */
+  if (stub_entry->stub_type != aarch64_stub_adrp_branch
+      && stub_entry->stub_type != aarch64_stub_long_branch)
+    return true;
+
+  /* Return true if the target instruction is compatible with BR x16.  */
+
+  asection *section = stub_entry->target_section;
+  bfd_byte loc[4];
+  file_ptr off = stub_entry->target_value;
+  bfd_size_type count = sizeof (loc);
+
+  if (!bfd_get_section_contents (input_bfd, section, loc, off, count))
+    return false;
+
+  uint32_t insn = bfd_getl32 (loc);
+  if (!AARCH64_HINT (insn))
+    return false;
+  return insn == AARCH64_BTI_C
+	 || insn == AARCH64_PACIASP
+	 || insn == AARCH64_BTI_JC
+	 || insn == AARCH64_BTI_J
+	 || insn == AARCH64_PACIBSP;
+}
 
 #define AARCH64_BITS(x, pos, n) (((x) >> (pos)) & ((1 << (n)) - 1))
 
@@ -4069,7 +4162,10 @@ _bfd_aarch64_resize_stubs (struct elf_aarch64_link_hash_table *htab)
       /* Ignore non-stub sections.  */
       if (!strstr (section->name, STUB_SUFFIX))
 	continue;
-      section->size = 0;
+
+      /* Add space for a branch.  Add 8 bytes to keep section 8 byte aligned,
+	 as long branch stubs contain a 64-bit address.  */
+      section->size = 8;
     }
 
   bfd_hash_traverse (&htab->stub_hash_table, aarch64_size_one_stub, htab);
@@ -4080,10 +4176,9 @@ _bfd_aarch64_resize_stubs (struct elf_aarch64_link_hash_table *htab)
       if (!strstr (section->name, STUB_SUFFIX))
 	continue;
 
-      /* Add space for a branch.  Add 8 bytes to keep section 8 byte aligned,
-	 as long branch stubs contain a 64-bit address.  */
-      if (section->size)
-	section->size += 8;
+      /* Empty stub section.  */
+      if (section->size == 8)
+	section->size = 0;
 
       /* Ensure all stub sections have a size which is a multiple of
 	 4096.  This is important in order to ensure that the insertion
@@ -4107,10 +4202,10 @@ _bfd_aarch64_erratum_843419_stub_name (asection *input_section,
   char *stub_name = bfd_malloc (len);
 
   if (stub_name != NULL)
-    snprintf (stub_name, len, "e843419@%04x_%08x_%" BFD_VMA_FMT "x",
+    snprintf (stub_name, len, "e843419@%04x_%08x_%" PRIx64,
 	      input_section->owner->id,
 	      input_section->id,
-	      offset);
+	      (uint64_t) offset);
   return stub_name;
 }
 
@@ -4254,11 +4349,361 @@ _bfd_aarch64_erratum_843419_scan (bfd *input_bfd, asection *section,
 }
 
 
-/* Determine and set the size of the stub section for a final link.
+/* Add stub entries for calls.
 
    The basic idea here is to examine all the relocations looking for
    PC-relative calls to a target that is unreachable with a "bl"
    instruction.  */
+
+static bool
+_bfd_aarch64_add_call_stub_entries (bool *stub_changed, bfd *output_bfd,
+				    struct bfd_link_info *info)
+{
+  struct elf_aarch64_link_hash_table *htab = elf_aarch64_hash_table (info);
+  bool need_bti = elf_aarch64_bti_p (output_bfd);
+  bfd *input_bfd;
+
+  for (input_bfd = info->input_bfds; input_bfd != NULL;
+       input_bfd = input_bfd->link.next)
+    {
+      Elf_Internal_Shdr *symtab_hdr;
+      asection *section;
+      Elf_Internal_Sym *local_syms = NULL;
+
+      if (!is_aarch64_elf (input_bfd)
+	  || (input_bfd->flags & BFD_LINKER_CREATED) != 0)
+	continue;
+
+      /* We'll need the symbol table in a second.  */
+      symtab_hdr = &elf_tdata (input_bfd)->symtab_hdr;
+      if (symtab_hdr->sh_info == 0)
+	continue;
+
+      /* Walk over each section attached to the input bfd.  */
+      for (section = input_bfd->sections;
+	   section != NULL; section = section->next)
+	{
+	  Elf_Internal_Rela *internal_relocs, *irelaend, *irela;
+
+	  /* If there aren't any relocs, then there's nothing more to do.  */
+	  if ((section->flags & SEC_RELOC) == 0
+	      || section->reloc_count == 0
+	      || (section->flags & SEC_CODE) == 0)
+	    continue;
+
+	  /* If this section is a link-once section that will be
+	     discarded, then don't create any stubs.  */
+	  if (section->output_section == NULL
+	      || section->output_section->owner != output_bfd)
+	    continue;
+
+	  /* Get the relocs.  */
+	  internal_relocs
+	    = _bfd_elf_link_read_relocs (input_bfd, section, NULL,
+					 NULL, info->keep_memory);
+	  if (internal_relocs == NULL)
+	    goto error_ret_free_local;
+
+	  /* Now examine each relocation.  */
+	  irela = internal_relocs;
+	  irelaend = irela + section->reloc_count;
+	  for (; irela < irelaend; irela++)
+	    {
+	      unsigned int r_type, r_indx;
+	      enum elf_aarch64_stub_type stub_type;
+	      struct elf_aarch64_stub_hash_entry *stub_entry;
+	      struct elf_aarch64_stub_hash_entry *stub_entry_bti;
+	      asection *sym_sec;
+	      bfd_vma sym_value;
+	      bfd_vma destination;
+	      struct elf_aarch64_link_hash_entry *hash;
+	      const char *sym_name;
+	      char *stub_name;
+	      char *stub_name_bti;
+	      const asection *id_sec;
+	      const asection *id_sec_bti;
+	      unsigned char st_type;
+	      bfd_size_type len;
+
+	      r_type = ELFNN_R_TYPE (irela->r_info);
+	      r_indx = ELFNN_R_SYM (irela->r_info);
+
+	      if (r_type >= (unsigned int) R_AARCH64_end)
+		{
+		  bfd_set_error (bfd_error_bad_value);
+		error_ret_free_internal:
+		  if (elf_section_data (section)->relocs == NULL)
+		    free (internal_relocs);
+		  goto error_ret_free_local;
+		}
+
+	      /* Only look for stubs on unconditional branch and
+		 branch and link instructions.  */
+	      if (r_type != (unsigned int) AARCH64_R (CALL26)
+		  && r_type != (unsigned int) AARCH64_R (JUMP26))
+		continue;
+
+	      /* Now determine the call target, its name, value,
+		 section.  */
+	      sym_sec = NULL;
+	      sym_value = 0;
+	      destination = 0;
+	      hash = NULL;
+	      sym_name = NULL;
+	      if (r_indx < symtab_hdr->sh_info)
+		{
+		  /* It's a local symbol.  */
+		  Elf_Internal_Sym *sym;
+		  Elf_Internal_Shdr *hdr;
+
+		  if (local_syms == NULL)
+		    {
+		      local_syms
+			= (Elf_Internal_Sym *) symtab_hdr->contents;
+		      if (local_syms == NULL)
+			local_syms
+			  = bfd_elf_get_elf_syms (input_bfd, symtab_hdr,
+						  symtab_hdr->sh_info, 0,
+						  NULL, NULL, NULL);
+		      if (local_syms == NULL)
+			goto error_ret_free_internal;
+		    }
+
+		  sym = local_syms + r_indx;
+		  hdr = elf_elfsections (input_bfd)[sym->st_shndx];
+		  sym_sec = hdr->bfd_section;
+		  if (!sym_sec)
+		    /* This is an undefined symbol.  It can never
+		       be resolved.  */
+		    continue;
+
+		  if (ELF_ST_TYPE (sym->st_info) != STT_SECTION)
+		    sym_value = sym->st_value;
+		  destination = (sym_value + irela->r_addend
+				 + sym_sec->output_offset
+				 + sym_sec->output_section->vma);
+		  st_type = ELF_ST_TYPE (sym->st_info);
+		  sym_name
+		    = bfd_elf_string_from_elf_section (input_bfd,
+						       symtab_hdr->sh_link,
+						       sym->st_name);
+		}
+	      else
+		{
+		  int e_indx;
+
+		  e_indx = r_indx - symtab_hdr->sh_info;
+		  hash = ((struct elf_aarch64_link_hash_entry *)
+			  elf_sym_hashes (input_bfd)[e_indx]);
+
+		  while (hash->root.root.type == bfd_link_hash_indirect
+			 || hash->root.root.type == bfd_link_hash_warning)
+		    hash = ((struct elf_aarch64_link_hash_entry *)
+			    hash->root.root.u.i.link);
+
+		  if (hash->root.root.type == bfd_link_hash_defined
+		      || hash->root.root.type == bfd_link_hash_defweak)
+		    {
+		      struct elf_aarch64_link_hash_table *globals =
+			elf_aarch64_hash_table (info);
+		      sym_sec = hash->root.root.u.def.section;
+		      sym_value = hash->root.root.u.def.value;
+		      /* For a destination in a shared library,
+			 use the PLT stub as target address to
+			 decide whether a branch stub is
+			 needed.  */
+		      if (globals->root.splt != NULL && hash != NULL
+			  && hash->root.plt.offset != (bfd_vma) - 1)
+			{
+			  sym_sec = globals->root.splt;
+			  sym_value = hash->root.plt.offset;
+			  if (sym_sec->output_section != NULL)
+			    destination = (sym_value
+					   + sym_sec->output_offset
+					   + sym_sec->output_section->vma);
+			}
+		      else if (sym_sec->output_section != NULL)
+			destination = (sym_value + irela->r_addend
+				       + sym_sec->output_offset
+				       + sym_sec->output_section->vma);
+		    }
+		  else if (hash->root.root.type == bfd_link_hash_undefined
+			   || (hash->root.root.type
+			       == bfd_link_hash_undefweak))
+		    {
+		      /* For a shared library, use the PLT stub as
+			 target address to decide whether a long
+			 branch stub is needed.
+			 For absolute code, they cannot be handled.  */
+		      struct elf_aarch64_link_hash_table *globals =
+			elf_aarch64_hash_table (info);
+
+		      if (globals->root.splt != NULL && hash != NULL
+			  && hash->root.plt.offset != (bfd_vma) - 1)
+			{
+			  sym_sec = globals->root.splt;
+			  sym_value = hash->root.plt.offset;
+			  if (sym_sec->output_section != NULL)
+			    destination = (sym_value
+					   + sym_sec->output_offset
+					   + sym_sec->output_section->vma);
+			}
+		      else
+			continue;
+		    }
+		  else
+		    {
+		      bfd_set_error (bfd_error_bad_value);
+		      goto error_ret_free_internal;
+		    }
+		  st_type = ELF_ST_TYPE (hash->root.type);
+		  sym_name = hash->root.root.root.string;
+		}
+
+	      /* Determine what (if any) linker stub is needed.  */
+	      stub_type = aarch64_type_of_stub (section, irela, sym_sec,
+						st_type, destination);
+	      if (stub_type == aarch64_stub_none)
+		continue;
+
+	      /* Support for grouping stub sections.  */
+	      id_sec = htab->stub_group[section->id].link_sec;
+
+	      /* Get the name of this stub.  */
+	      stub_name = elfNN_aarch64_stub_name (id_sec, sym_sec, hash,
+						   irela);
+	      if (!stub_name)
+		goto error_ret_free_internal;
+
+	      stub_entry =
+		aarch64_stub_hash_lookup (&htab->stub_hash_table,
+					  stub_name, false, false);
+	      if (stub_entry != NULL)
+		{
+		  /* The proper stub has already been created.  */
+		  free (stub_name);
+
+		  /* Always update this stub's target since it may have
+		     changed after layout.  */
+		  stub_entry->target_value = sym_value + irela->r_addend;
+
+		  if (stub_entry->double_stub)
+		    {
+		      /* Update the target of both stubs.  */
+
+		      id_sec_bti = htab->stub_group[sym_sec->id].link_sec;
+		      stub_name_bti =
+			elfNN_aarch64_stub_name (id_sec_bti, sym_sec, hash,
+						 irela);
+		      if (!stub_name_bti)
+			goto error_ret_free_internal;
+		      stub_entry_bti =
+			aarch64_stub_hash_lookup (&htab->stub_hash_table,
+						  stub_name_bti, false, false);
+		      BFD_ASSERT (stub_entry_bti != NULL);
+		      free (stub_name_bti);
+		      stub_entry_bti->target_value = stub_entry->target_value;
+		      stub_entry->target_value = stub_entry_bti->stub_offset;
+		    }
+		  continue;
+		}
+
+	      stub_entry = _bfd_aarch64_add_stub_entry_in_group
+		(stub_name, section, htab);
+	      if (stub_entry == NULL)
+		{
+		  free (stub_name);
+		  goto error_ret_free_internal;
+		}
+
+	      stub_entry->target_value = sym_value + irela->r_addend;
+	      stub_entry->target_section = sym_sec;
+	      stub_entry->stub_type = stub_type;
+	      stub_entry->h = hash;
+	      stub_entry->st_type = st_type;
+
+	      if (sym_name == NULL)
+		sym_name = "unnamed";
+	      len = sizeof (STUB_ENTRY_NAME) + strlen (sym_name);
+	      stub_entry->output_name = bfd_alloc (htab->stub_bfd, len);
+	      if (stub_entry->output_name == NULL)
+		{
+		  free (stub_name);
+		  goto error_ret_free_internal;
+		}
+
+	      snprintf (stub_entry->output_name, len, STUB_ENTRY_NAME,
+			sym_name);
+
+	      /* A stub with indirect jump may break BTI compatibility, so
+		 insert another stub with direct jump near the target then.  */
+	      if (need_bti && !aarch64_bti_stub_p (input_bfd, stub_entry))
+		{
+		  stub_entry->double_stub = true;
+		  htab->has_double_stub = true;
+		  id_sec_bti = htab->stub_group[sym_sec->id].link_sec;
+		  stub_name_bti =
+		    elfNN_aarch64_stub_name (id_sec_bti, sym_sec, hash, irela);
+		  if (!stub_name_bti)
+		    {
+		      free (stub_name);
+		      goto error_ret_free_internal;
+		    }
+
+		  stub_entry_bti =
+		    aarch64_stub_hash_lookup (&htab->stub_hash_table,
+					      stub_name_bti, false, false);
+		  if (stub_entry_bti == NULL)
+		    stub_entry_bti =
+		      _bfd_aarch64_add_stub_entry_in_group (stub_name_bti,
+							    sym_sec, htab);
+		  if (stub_entry_bti == NULL)
+		    {
+		      free (stub_name);
+		      free (stub_name_bti);
+		      goto error_ret_free_internal;
+		    }
+
+		  stub_entry_bti->target_value = sym_value + irela->r_addend;
+		  stub_entry_bti->target_section = sym_sec;
+		  stub_entry_bti->stub_type = aarch64_stub_bti_direct_branch;
+		  stub_entry_bti->h = hash;
+		  stub_entry_bti->st_type = st_type;
+
+		  len = sizeof (BTI_STUB_ENTRY_NAME) + strlen (sym_name);
+		  stub_entry_bti->output_name = bfd_alloc (htab->stub_bfd, len);
+		  if (stub_entry_bti->output_name == NULL)
+		    {
+		      free (stub_name);
+		      free (stub_name_bti);
+		      goto error_ret_free_internal;
+		    }
+		  snprintf (stub_entry_bti->output_name, len,
+			    BTI_STUB_ENTRY_NAME, sym_name);
+
+		  /* Update the indirect call stub to target the BTI stub.  */
+		  stub_entry->target_value = 0;
+		  stub_entry->target_section = stub_entry_bti->stub_sec;
+		  stub_entry->stub_type = stub_type;
+		  stub_entry->h = NULL;
+		  stub_entry->st_type = STT_FUNC;
+		}
+
+	      *stub_changed = true;
+	    }
+
+	  /* We're done with the internal relocs, free them.  */
+	  if (elf_section_data (section)->relocs == NULL)
+	    free (internal_relocs);
+	}
+    }
+  return true;
+ error_ret_free_local:
+  return false;
+}
+
+
+/* Determine and set the size of the stub section for a final link.  */
 
 bool
 elfNN_aarch64_size_stubs (bfd *output_bfd,
@@ -4271,7 +4716,6 @@ elfNN_aarch64_size_stubs (bfd *output_bfd,
 {
   bfd_size_type stub_group_size;
   bool stubs_always_before_branch;
-  bool stub_changed = false;
   struct elf_aarch64_link_hash_table *htab = elf_aarch64_hash_table (info);
   unsigned int num_erratum_835769_fixes = 0;
 
@@ -4346,285 +4790,19 @@ elfNN_aarch64_size_stubs (bfd *output_bfd,
       (*htab->layout_sections_again) ();
     }
 
-  while (1)
+  for (;;)
     {
-      bfd *input_bfd;
+      bool stub_changed = false;
 
-      for (input_bfd = info->input_bfds;
-	   input_bfd != NULL; input_bfd = input_bfd->link.next)
-	{
-	  Elf_Internal_Shdr *symtab_hdr;
-	  asection *section;
-	  Elf_Internal_Sym *local_syms = NULL;
-
-	  if (!is_aarch64_elf (input_bfd)
-	      || (input_bfd->flags & BFD_LINKER_CREATED) != 0)
-	    continue;
-
-	  /* We'll need the symbol table in a second.  */
-	  symtab_hdr = &elf_tdata (input_bfd)->symtab_hdr;
-	  if (symtab_hdr->sh_info == 0)
-	    continue;
-
-	  /* Walk over each section attached to the input bfd.  */
-	  for (section = input_bfd->sections;
-	       section != NULL; section = section->next)
-	    {
-	      Elf_Internal_Rela *internal_relocs, *irelaend, *irela;
-
-	      /* If there aren't any relocs, then there's nothing more
-		 to do.  */
-	      if ((section->flags & SEC_RELOC) == 0
-		  || section->reloc_count == 0
-		  || (section->flags & SEC_CODE) == 0)
-		continue;
-
-	      /* If this section is a link-once section that will be
-		 discarded, then don't create any stubs.  */
-	      if (section->output_section == NULL
-		  || section->output_section->owner != output_bfd)
-		continue;
-
-	      /* Get the relocs.  */
-	      internal_relocs
-		= _bfd_elf_link_read_relocs (input_bfd, section, NULL,
-					     NULL, info->keep_memory);
-	      if (internal_relocs == NULL)
-		goto error_ret_free_local;
-
-	      /* Now examine each relocation.  */
-	      irela = internal_relocs;
-	      irelaend = irela + section->reloc_count;
-	      for (; irela < irelaend; irela++)
-		{
-		  unsigned int r_type, r_indx;
-		  enum elf_aarch64_stub_type stub_type;
-		  struct elf_aarch64_stub_hash_entry *stub_entry;
-		  asection *sym_sec;
-		  bfd_vma sym_value;
-		  bfd_vma destination;
-		  struct elf_aarch64_link_hash_entry *hash;
-		  const char *sym_name;
-		  char *stub_name;
-		  const asection *id_sec;
-		  unsigned char st_type;
-		  bfd_size_type len;
-
-		  r_type = ELFNN_R_TYPE (irela->r_info);
-		  r_indx = ELFNN_R_SYM (irela->r_info);
-
-		  if (r_type >= (unsigned int) R_AARCH64_end)
-		    {
-		      bfd_set_error (bfd_error_bad_value);
-		    error_ret_free_internal:
-		      if (elf_section_data (section)->relocs == NULL)
-			free (internal_relocs);
-		      goto error_ret_free_local;
-		    }
-
-		  /* Only look for stubs on unconditional branch and
-		     branch and link instructions.  */
-		  if (r_type != (unsigned int) AARCH64_R (CALL26)
-		      && r_type != (unsigned int) AARCH64_R (JUMP26))
-		    continue;
-
-		  /* Now determine the call target, its name, value,
-		     section.  */
-		  sym_sec = NULL;
-		  sym_value = 0;
-		  destination = 0;
-		  hash = NULL;
-		  sym_name = NULL;
-		  if (r_indx < symtab_hdr->sh_info)
-		    {
-		      /* It's a local symbol.  */
-		      Elf_Internal_Sym *sym;
-		      Elf_Internal_Shdr *hdr;
-
-		      if (local_syms == NULL)
-			{
-			  local_syms
-			    = (Elf_Internal_Sym *) symtab_hdr->contents;
-			  if (local_syms == NULL)
-			    local_syms
-			      = bfd_elf_get_elf_syms (input_bfd, symtab_hdr,
-						      symtab_hdr->sh_info, 0,
-						      NULL, NULL, NULL);
-			  if (local_syms == NULL)
-			    goto error_ret_free_internal;
-			}
-
-		      sym = local_syms + r_indx;
-		      hdr = elf_elfsections (input_bfd)[sym->st_shndx];
-		      sym_sec = hdr->bfd_section;
-		      if (!sym_sec)
-			/* This is an undefined symbol.  It can never
-			   be resolved.  */
-			continue;
-
-		      if (ELF_ST_TYPE (sym->st_info) != STT_SECTION)
-			sym_value = sym->st_value;
-		      destination = (sym_value + irela->r_addend
-				     + sym_sec->output_offset
-				     + sym_sec->output_section->vma);
-		      st_type = ELF_ST_TYPE (sym->st_info);
-		      sym_name
-			= bfd_elf_string_from_elf_section (input_bfd,
-							   symtab_hdr->sh_link,
-							   sym->st_name);
-		    }
-		  else
-		    {
-		      int e_indx;
-
-		      e_indx = r_indx - symtab_hdr->sh_info;
-		      hash = ((struct elf_aarch64_link_hash_entry *)
-			      elf_sym_hashes (input_bfd)[e_indx]);
-
-		      while (hash->root.root.type == bfd_link_hash_indirect
-			     || hash->root.root.type == bfd_link_hash_warning)
-			hash = ((struct elf_aarch64_link_hash_entry *)
-				hash->root.root.u.i.link);
-
-		      if (hash->root.root.type == bfd_link_hash_defined
-			  || hash->root.root.type == bfd_link_hash_defweak)
-			{
-			  struct elf_aarch64_link_hash_table *globals =
-			    elf_aarch64_hash_table (info);
-			  sym_sec = hash->root.root.u.def.section;
-			  sym_value = hash->root.root.u.def.value;
-			  /* For a destination in a shared library,
-			     use the PLT stub as target address to
-			     decide whether a branch stub is
-			     needed.  */
-			  if (globals->root.splt != NULL && hash != NULL
-			      && hash->root.plt.offset != (bfd_vma) - 1)
-			    {
-			      sym_sec = globals->root.splt;
-			      sym_value = hash->root.plt.offset;
-			      if (sym_sec->output_section != NULL)
-				destination = (sym_value
-					       + sym_sec->output_offset
-					       +
-					       sym_sec->output_section->vma);
-			    }
-			  else if (sym_sec->output_section != NULL)
-			    destination = (sym_value + irela->r_addend
-					   + sym_sec->output_offset
-					   + sym_sec->output_section->vma);
-			}
-		      else if (hash->root.root.type == bfd_link_hash_undefined
-			       || (hash->root.root.type
-				   == bfd_link_hash_undefweak))
-			{
-			  /* For a shared library, use the PLT stub as
-			     target address to decide whether a long
-			     branch stub is needed.
-			     For absolute code, they cannot be handled.  */
-			  struct elf_aarch64_link_hash_table *globals =
-			    elf_aarch64_hash_table (info);
-
-			  if (globals->root.splt != NULL && hash != NULL
-			      && hash->root.plt.offset != (bfd_vma) - 1)
-			    {
-			      sym_sec = globals->root.splt;
-			      sym_value = hash->root.plt.offset;
-			      if (sym_sec->output_section != NULL)
-				destination = (sym_value
-					       + sym_sec->output_offset
-					       +
-					       sym_sec->output_section->vma);
-			    }
-			  else
-			    continue;
-			}
-		      else
-			{
-			  bfd_set_error (bfd_error_bad_value);
-			  goto error_ret_free_internal;
-			}
-		      st_type = ELF_ST_TYPE (hash->root.type);
-		      sym_name = hash->root.root.root.string;
-		    }
-
-		  /* Determine what (if any) linker stub is needed.  */
-		  stub_type = aarch64_type_of_stub (section, irela, sym_sec,
-						    st_type, destination);
-		  if (stub_type == aarch64_stub_none)
-		    continue;
-
-		  /* Support for grouping stub sections.  */
-		  id_sec = htab->stub_group[section->id].link_sec;
-
-		  /* Get the name of this stub.  */
-		  stub_name = elfNN_aarch64_stub_name (id_sec, sym_sec, hash,
-						       irela);
-		  if (!stub_name)
-		    goto error_ret_free_internal;
-
-		  stub_entry =
-		    aarch64_stub_hash_lookup (&htab->stub_hash_table,
-					      stub_name, false, false);
-		  if (stub_entry != NULL)
-		    {
-		      /* The proper stub has already been created.  */
-		      free (stub_name);
-		      /* Always update this stub's target since it may have
-			 changed after layout.  */
-		      stub_entry->target_value = sym_value + irela->r_addend;
-		      continue;
-		    }
-
-		  stub_entry = _bfd_aarch64_add_stub_entry_in_group
-		    (stub_name, section, htab);
-		  if (stub_entry == NULL)
-		    {
-		      free (stub_name);
-		      goto error_ret_free_internal;
-		    }
-
-		  stub_entry->target_value = sym_value + irela->r_addend;
-		  stub_entry->target_section = sym_sec;
-		  stub_entry->stub_type = stub_type;
-		  stub_entry->h = hash;
-		  stub_entry->st_type = st_type;
-
-		  if (sym_name == NULL)
-		    sym_name = "unnamed";
-		  len = sizeof (STUB_ENTRY_NAME) + strlen (sym_name);
-		  stub_entry->output_name = bfd_alloc (htab->stub_bfd, len);
-		  if (stub_entry->output_name == NULL)
-		    {
-		      free (stub_name);
-		      goto error_ret_free_internal;
-		    }
-
-		  snprintf (stub_entry->output_name, len, STUB_ENTRY_NAME,
-			    sym_name);
-
-		  stub_changed = true;
-		}
-
-	      /* We're done with the internal relocs, free them.  */
-	      if (elf_section_data (section)->relocs == NULL)
-		free (internal_relocs);
-	    }
-	}
+      if (!_bfd_aarch64_add_call_stub_entries (&stub_changed, output_bfd, info))
+	return false;
 
       if (!stub_changed)
-	break;
+	return true;
 
       _bfd_aarch64_resize_stubs (htab);
-
-      /* Ask the linker to do its stuff.  */
       (*htab->layout_sections_again) ();
-      stub_changed = false;
     }
-
-  return true;
-
- error_ret_free_local:
-  return false;
 }
 
 /* Build all the stubs associated with the current output file.  The
@@ -4887,60 +5065,62 @@ aarch64_calculate_got_entry_vma (struct elf_link_hash_entry *h,
 
 static bfd_reloc_code_real_type
 aarch64_tls_transition_without_check (bfd_reloc_code_real_type r_type,
-				      struct elf_link_hash_entry *h)
+				      struct elf_link_hash_entry *h,
+				      struct bfd_link_info *info)
 {
-  bool is_local = h == NULL;
+  bool local_exec = bfd_link_executable (info)
+    && SYMBOL_REFERENCES_LOCAL (info, h);
 
   switch (r_type)
     {
     case BFD_RELOC_AARCH64_TLSDESC_ADR_PAGE21:
     case BFD_RELOC_AARCH64_TLSGD_ADR_PAGE21:
-      return (is_local
+      return (local_exec
 	      ? BFD_RELOC_AARCH64_TLSLE_MOVW_TPREL_G1
 	      : BFD_RELOC_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21);
 
     case BFD_RELOC_AARCH64_TLSDESC_ADR_PREL21:
-      return (is_local
+      return (local_exec
 	      ? BFD_RELOC_AARCH64_TLSLE_MOVW_TPREL_G0_NC
 	      : r_type);
 
     case BFD_RELOC_AARCH64_TLSDESC_LD_PREL19:
-      return (is_local
+      return (local_exec
 	      ? BFD_RELOC_AARCH64_TLSLE_MOVW_TPREL_G1
 	      : BFD_RELOC_AARCH64_TLSIE_LD_GOTTPREL_PREL19);
 
     case BFD_RELOC_AARCH64_TLSDESC_LDR:
-      return (is_local
+      return (local_exec
 	      ? BFD_RELOC_AARCH64_TLSLE_MOVW_TPREL_G0_NC
 	      : BFD_RELOC_AARCH64_NONE);
 
     case BFD_RELOC_AARCH64_TLSDESC_OFF_G0_NC:
-      return (is_local
+      return (local_exec
 	      ? BFD_RELOC_AARCH64_TLSLE_MOVW_TPREL_G1_NC
 	      : BFD_RELOC_AARCH64_TLSIE_MOVW_GOTTPREL_G0_NC);
 
     case BFD_RELOC_AARCH64_TLSDESC_OFF_G1:
-      return (is_local
+      return (local_exec
 	      ? BFD_RELOC_AARCH64_TLSLE_MOVW_TPREL_G2
 	      : BFD_RELOC_AARCH64_TLSIE_MOVW_GOTTPREL_G1);
 
     case BFD_RELOC_AARCH64_TLSDESC_LDNN_LO12_NC:
     case BFD_RELOC_AARCH64_TLSGD_ADD_LO12_NC:
-      return (is_local
+      return (local_exec
 	      ? BFD_RELOC_AARCH64_TLSLE_MOVW_TPREL_G0_NC
 	      : BFD_RELOC_AARCH64_TLSIE_LDNN_GOTTPREL_LO12_NC);
 
     case BFD_RELOC_AARCH64_TLSIE_ADR_GOTTPREL_PAGE21:
-      return is_local ? BFD_RELOC_AARCH64_TLSLE_MOVW_TPREL_G1 : r_type;
+      return local_exec ? BFD_RELOC_AARCH64_TLSLE_MOVW_TPREL_G1 : r_type;
 
     case BFD_RELOC_AARCH64_TLSIE_LDNN_GOTTPREL_LO12_NC:
-      return is_local ? BFD_RELOC_AARCH64_TLSLE_MOVW_TPREL_G0_NC : r_type;
+      return local_exec ? BFD_RELOC_AARCH64_TLSLE_MOVW_TPREL_G0_NC : r_type;
 
     case BFD_RELOC_AARCH64_TLSIE_LD_GOTTPREL_PREL19:
       return r_type;
 
     case BFD_RELOC_AARCH64_TLSGD_ADR_PREL21:
-      return (is_local
+      return (local_exec
 	      ? BFD_RELOC_AARCH64_TLSLE_ADD_TPREL_HI12
 	      : BFD_RELOC_AARCH64_TLSIE_LD_GOTTPREL_PREL19);
 
@@ -4953,16 +5133,16 @@ aarch64_tls_transition_without_check (bfd_reloc_code_real_type r_type,
     case BFD_RELOC_AARCH64_TLSLD_ADD_LO12_NC:
     case BFD_RELOC_AARCH64_TLSLD_ADR_PAGE21:
     case BFD_RELOC_AARCH64_TLSLD_ADR_PREL21:
-      return is_local ? BFD_RELOC_AARCH64_NONE : r_type;
+      return local_exec ? BFD_RELOC_AARCH64_NONE : r_type;
 
 #if ARCH_SIZE == 64
     case BFD_RELOC_AARCH64_TLSGD_MOVW_G0_NC:
-      return is_local
+      return local_exec
 	? BFD_RELOC_AARCH64_TLSLE_MOVW_TPREL_G1_NC
 	: BFD_RELOC_AARCH64_TLSIE_MOVW_GOTTPREL_G0_NC;
 
     case BFD_RELOC_AARCH64_TLSGD_MOVW_G1:
-      return is_local
+      return local_exec
 	? BFD_RELOC_AARCH64_TLSLE_MOVW_TPREL_G2
 	: BFD_RELOC_AARCH64_TLSIE_MOVW_GOTTPREL_G1;
 #endif
@@ -5071,7 +5251,7 @@ aarch64_tls_transition (bfd *input_bfd,
   if (! aarch64_can_relax_tls (input_bfd, info, bfd_r_type, h, r_symndx))
     return bfd_r_type;
 
-  return aarch64_tls_transition_without_check (bfd_r_type, h);
+  return aarch64_tls_transition_without_check (bfd_r_type, h, info);
 }
 
 /* Return the base VMA address which should be subtracted from real addresses
@@ -5345,15 +5525,13 @@ _bfd_aarch64_erratum_843419_branch_to_stub (struct bfd_hash_entry *gen_entry,
     }
   else
     {
-      char imm_buf[128];
-
-      sprintf (imm_buf, "%" BFD_VMA_FMT "x", imm);
       abfd = stub_entry->target_section->owner;
       _bfd_error_handler
-	(_("%pB: error: erratum 843419 immediate 0x%s "
-	   "out of range for ADR (input file too large) and "
+	(_("%pB: error: erratum 843419 immediate 0x%" PRIx64
+	   " out of range for ADR (input file too large) and "
 	   "--fix-cortex-a53-843419=adr used.  Run the linker with "
-	   "--fix-cortex-a53-843419=full instead"), abfd, imm_buf);
+	   "--fix-cortex-a53-843419=full instead"),
+	 abfd, (uint64_t) (bfd_vma) imm);
       bfd_set_error (bfd_error_bad_value);
       /* This function is called inside a hashtable traversal and the error
 	 handlers called above turn into non-fatal errors.  Which means this
@@ -5528,7 +5706,7 @@ elfNN_aarch64_final_link_relocate (reloc_howto_type *howto,
 	    /* xgettext:c-format */
 	    (_("%pB: relocation %s against STT_GNU_IFUNC "
 	       "symbol `%s' isn't handled by %s"), input_bfd,
-	     howto->name, name, __FUNCTION__);
+	     howto->name, name, __func__);
 	  bfd_set_error (bfd_error_bad_value);
 	  return bfd_reloc_notsupported;
 
@@ -5878,7 +6056,7 @@ elfNN_aarch64_final_link_relocate (reloc_howto_type *howto,
       if (bfd_link_pic (info)
 	  && (input_section->flags & SEC_ALLOC) != 0
 	  && (input_section->flags & SEC_READONLY) != 0
-	  && !SYMBOL_REFERENCES_LOCAL (info, h))
+	  && !_bfd_elf_symbol_refs_local_p (h, info, 1))
 	{
 	  int howto_index = bfd_r_type - BFD_RELOC_AARCH64_RELOC_START;
 
@@ -6310,9 +6488,11 @@ static bfd_reloc_status_type
 elfNN_aarch64_tls_relax (struct elf_aarch64_link_hash_table *globals,
 			 bfd *input_bfd, asection *input_section,
 			 bfd_byte *contents, Elf_Internal_Rela *rel,
-			 struct elf_link_hash_entry *h)
+			 struct elf_link_hash_entry *h,
+			 struct bfd_link_info *info)
 {
-  bool is_local = h == NULL;
+  bool local_exec = bfd_link_executable (info)
+    && SYMBOL_REFERENCES_LOCAL (info, h);
   unsigned int r_type = ELFNN_R_TYPE (rel->r_info);
   unsigned long insn;
 
@@ -6322,7 +6502,7 @@ elfNN_aarch64_tls_relax (struct elf_aarch64_link_hash_table *globals,
     {
     case BFD_RELOC_AARCH64_TLSDESC_ADR_PAGE21:
     case BFD_RELOC_AARCH64_TLSGD_ADR_PAGE21:
-      if (is_local)
+      if (local_exec)
 	{
 	  /* GD->LE relaxation:
 	     adrp x0, :tlsgd:var     =>   movz R0, :tprel_g1:var
@@ -6351,7 +6531,7 @@ elfNN_aarch64_tls_relax (struct elf_aarch64_link_hash_table *globals,
       break;
 
     case BFD_RELOC_AARCH64_TLSDESC_LD_PREL19:
-      if (is_local)
+      if (local_exec)
 	{
 	  /* Tiny TLSDESC->LE relaxation:
 	     ldr   x1, :tlsdesc:var	 =>  movz  R0, #:tprel_g1:var
@@ -6393,7 +6573,7 @@ elfNN_aarch64_tls_relax (struct elf_aarch64_link_hash_table *globals,
 	}
 
     case BFD_RELOC_AARCH64_TLSGD_ADR_PREL21:
-      if (is_local)
+      if (local_exec)
 	{
 	  /* Tiny GD->LE relaxation:
 	     adr x0, :tlsgd:var	     =>	  mrs  x1, tpidr_el0
@@ -6445,7 +6625,7 @@ elfNN_aarch64_tls_relax (struct elf_aarch64_link_hash_table *globals,
       BFD_ASSERT (rel->r_offset + 12 == rel[2].r_offset);
       BFD_ASSERT (ELFNN_R_TYPE (rel[2].r_info) == AARCH64_R (CALL26));
 
-      if (is_local)
+      if (local_exec)
 	{
 	  /* Large GD->LE relaxation:
 	     movz x0, #:tlsgd_g1:var	=> movz x0, #:tprel_g2:var, lsl #32
@@ -6489,7 +6669,7 @@ elfNN_aarch64_tls_relax (struct elf_aarch64_link_hash_table *globals,
       return bfd_reloc_continue;
 
     case BFD_RELOC_AARCH64_TLSDESC_LDNN_LO12_NC:
-      if (is_local)
+      if (local_exec)
 	{
 	  /* GD->LE relaxation:
 	     ldr xd, [x0, #:tlsdesc_lo12:var]   =>   movk x0, :tprel_g0_nc:var
@@ -6510,7 +6690,7 @@ elfNN_aarch64_tls_relax (struct elf_aarch64_link_hash_table *globals,
 	}
 
     case BFD_RELOC_AARCH64_TLSGD_ADD_LO12_NC:
-      if (is_local)
+      if (local_exec)
 	{
 	  /* GD->LE relaxation
 	     add  x0, #:tlsgd_lo12:var	=> movk R0, :tprel_g0_nc:var
@@ -6563,7 +6743,7 @@ elfNN_aarch64_tls_relax (struct elf_aarch64_link_hash_table *globals,
       return bfd_reloc_ok;
 
     case BFD_RELOC_AARCH64_TLSDESC_LDR:
-      if (is_local)
+      if (local_exec)
 	{
 	  /* GD->LE relaxation:
 	     ldr xd, [gp, xn]   =>   movk R0, #:tprel_g0_nc:var
@@ -6590,12 +6770,12 @@ elfNN_aarch64_tls_relax (struct elf_aarch64_link_hash_table *globals,
 	 movk xd, #:tlsdesc_off_g0_nc:var => movk Rd, #:gottprel_g0_nc:var
 
 	 Where R is x for lp64 mode, and w for ILP32 mode.  */
-      if (is_local)
+      if (local_exec)
 	bfd_putl32 (ldr_hw_R0, contents + rel->r_offset);
       return bfd_reloc_continue;
 
     case BFD_RELOC_AARCH64_TLSDESC_OFF_G1:
-      if (is_local)
+      if (local_exec)
 	{
 	  /* GD->LE relaxation:
 	     movz xd, #:tlsdesc_off_g1:var => movz R0, #:tprel_g2:var, lsl #32
@@ -6620,7 +6800,7 @@ elfNN_aarch64_tls_relax (struct elf_aarch64_link_hash_table *globals,
 	 adrp xd, :gottprel:var   =>   movz Rd, :tprel_g1:var
 
 	 Where R is x for lp64 mode, and w for ILP32 mode.  */
-      if (is_local)
+      if (local_exec)
 	{
 	  insn = bfd_getl32 (contents + rel->r_offset);
 	  bfd_putl32 (movz_R0 | (insn & 0x1f), contents + rel->r_offset);
@@ -6635,7 +6815,7 @@ elfNN_aarch64_tls_relax (struct elf_aarch64_link_hash_table *globals,
 	 ldr  xd, [xm, #:gottprel_lo12:var]   =>   movk Rd, :tprel_g0_nc:var
 
 	 Where R is x for lp64 mode, and w for ILP32 mode.  */
-      if (is_local)
+      if (local_exec)
 	{
 	  insn = bfd_getl32 (contents + rel->r_offset);
 	  bfd_putl32 (movk_R0 | (insn & 0x1f), contents + rel->r_offset);
@@ -6648,7 +6828,7 @@ elfNN_aarch64_tls_relax (struct elf_aarch64_link_hash_table *globals,
 	 bl   __tls_get_addr => add R0, R0, TCB_SIZE
 
 	 Where R is x for lp64 mode, and w for ilp32 mode.  */
-      if (is_local)
+      if (local_exec)
 	{
 	  BFD_ASSERT (rel->r_offset + 4 == rel[1].r_offset);
 	  BFD_ASSERT (ELFNN_R_TYPE (rel[1].r_info) == AARCH64_R (CALL26));
@@ -6665,7 +6845,7 @@ elfNN_aarch64_tls_relax (struct elf_aarch64_link_hash_table *globals,
       /* LD->LE relaxation (small):
 	 adrp  x0, :tlsldm:x       => mrs x0, tpidr_el0
        */
-      if (is_local)
+      if (local_exec)
 	{
 	  bfd_putl32 (0xd53bd040, contents + rel->r_offset);
 	  return bfd_reloc_ok;
@@ -6678,7 +6858,7 @@ elfNN_aarch64_tls_relax (struct elf_aarch64_link_hash_table *globals,
 	 bl   __tls_get_addr       => nop
 
 	 Where R is x for lp64 mode, and w for ilp32 mode.  */
-      if (is_local)
+      if (local_exec)
 	{
 	  BFD_ASSERT (rel->r_offset + 4 == rel[1].r_offset);
 	  BFD_ASSERT (ELFNN_R_TYPE (rel[1].r_info) == AARCH64_R (CALL26));
@@ -6766,8 +6946,12 @@ elfNN_aarch64_relocate_section (bfd *output_bfd,
 
 	  /* An object file might have a reference to a local
 	     undefined symbol.  This is a daft object file, but we
-	     should at least do something about it.  */
+	     should at least do something about it.  NONE and NULL
+	     relocations do not use the symbol and are explicitly
+	     allowed to use an undefined one, so allow those.
+	     Likewise for relocations against STN_UNDEF.  */
 	  if (r_type != R_AARCH64_NONE && r_type != R_AARCH64_NULL
+	      && r_symndx != STN_UNDEF
 	      && bfd_is_und_section (sec)
 	      && ELF_ST_BIND (sym->st_info) != STB_WEAK)
 	    (*info->callbacks->undefined_symbol)
@@ -6852,7 +7036,7 @@ elfNN_aarch64_relocate_section (bfd *output_bfd,
 	  BFD_ASSERT (howto != NULL);
 	  r_type = howto->type;
 	  r = elfNN_aarch64_tls_relax (globals, input_bfd, input_section,
-				       contents, rel, h);
+				       contents, rel, h, info);
 	  unresolved_reloc = 0;
 	}
       else
@@ -8158,6 +8342,89 @@ elfNN_aarch64_section_from_shdr (bfd *abfd,
   return true;
 }
 
+/* Process any AArch64-specific program segment types.  */
+
+static bool
+elfNN_aarch64_section_from_phdr (bfd *abfd ATTRIBUTE_UNUSED,
+				 Elf_Internal_Phdr *hdr,
+				 int hdr_index ATTRIBUTE_UNUSED,
+				 const char *name ATTRIBUTE_UNUSED)
+{
+  /* Right now we only handle the PT_AARCH64_MEMTAG_MTE segment type.  */
+  if (hdr == NULL || hdr->p_type != PT_AARCH64_MEMTAG_MTE)
+    return false;
+
+  if (hdr->p_filesz > 0)
+    {
+      /* Sections created from memory tag p_type's are always named
+	 "memtag".  This makes it easier for tools (for example, GDB)
+	 to find them.  */
+      asection *newsect = bfd_make_section_anyway (abfd, "memtag");
+
+      if (newsect == NULL)
+	return false;
+
+      unsigned int opb = bfd_octets_per_byte (abfd, NULL);
+
+      /* p_vaddr holds the original start address of the tagged memory
+	 range.  */
+      newsect->vma = hdr->p_vaddr / opb;
+
+      /* p_filesz holds the storage size of the packed tags.  */
+      newsect->size = hdr->p_filesz;
+      newsect->filepos = hdr->p_offset;
+
+      /* p_memsz holds the size of the memory range that contains tags.  The
+	 section's rawsize field is reused for this purpose.  */
+      newsect->rawsize = hdr->p_memsz;
+
+      /* Make sure the section's flags has SEC_HAS_CONTENTS set, otherwise
+	 BFD will return all zeroes when attempting to get contents from this
+	 section.  */
+      newsect->flags |= SEC_HAS_CONTENTS;
+    }
+
+  return true;
+}
+
+/* Implements the bfd_elf_modify_headers hook for aarch64.  */
+
+static bool
+elfNN_aarch64_modify_headers (bfd *abfd,
+			      struct bfd_link_info *info)
+{
+  struct elf_segment_map *m;
+  unsigned int segment_count = 0;
+  Elf_Internal_Phdr *p;
+
+  for (m = elf_seg_map (abfd); m != NULL; m = m->next, segment_count++)
+    {
+      /* We are only interested in the memory tag segment that will be dumped
+	 to a core file.  If we have no memory tags or this isn't a core file we
+	 are dealing with, just skip this segment.  */
+      if (m->p_type != PT_AARCH64_MEMTAG_MTE
+	  || bfd_get_format (abfd) != bfd_core)
+	continue;
+
+      /* For memory tag segments in core files, the size of the file contents
+	 is smaller than the size of the memory range.  Adjust the memory size
+	 accordingly.  The real memory size is held in the section's rawsize
+	 field.  */
+      if (m->count > 0)
+	{
+	  p = elf_tdata (abfd)->phdr;
+	  p += m->idx;
+	  p->p_memsz = m->sections[0]->rawsize;
+	  p->p_flags = 0;
+	  p->p_paddr = 0;
+	  p->p_align = 0;
+	}
+    }
+
+  /* Give the generic code a chance to handle the headers.  */
+  return _bfd_elf_modify_headers (abfd, info);
+}
+
 /* A structure used to record a list of sections, independently
    of the next and prev fields in the asection structure.  */
 typedef struct section_list
@@ -8341,6 +8608,13 @@ aarch64_map_one_stub (struct bfd_hash_entry *gen_entry, void *in_arg)
       if (!elfNN_aarch64_output_map_sym (osi, AARCH64_MAP_DATA, addr + 16))
 	return false;
       break;
+    case aarch64_stub_bti_direct_branch:
+      if (!elfNN_aarch64_output_stub_sym (osi, stub_name, addr,
+	  sizeof (aarch64_bti_direct_branch_stub)))
+	return false;
+      if (!elfNN_aarch64_output_map_sym (osi, AARCH64_MAP_INSN, addr))
+	return false;
+      break;
     case aarch64_stub_erratum_835769_veneer:
       if (!elfNN_aarch64_output_stub_sym (osi, stub_name, addr,
 					  sizeof (aarch64_erratum_835769_stub)))
@@ -8379,6 +8653,11 @@ elfNN_aarch64_output_arch_local_syms (bfd *output_bfd,
 {
   output_arch_syminfo osi;
   struct elf_aarch64_link_hash_table *htab;
+
+  if (info->strip == strip_all
+      && !info->emitrelocations
+      && !bfd_link_relocatable (info))
+    return true;
 
   htab = elf_aarch64_hash_table (info);
 
@@ -8700,6 +8979,22 @@ elfNN_aarch64_allocate_dynrelocs (struct elf_link_hash_entry *h, void *inf)
 
   if (h->dyn_relocs == NULL)
     return true;
+
+  for (p = h->dyn_relocs; p != NULL; p = p->next)
+    if (eh->def_protected)
+      {
+	/* Disallow copy relocations against protected symbol.  */
+	asection *s = p->sec->output_section;
+	if (s != NULL && (s->flags & SEC_READONLY) != 0)
+	  {
+	    info->callbacks->einfo
+		/* xgettext:c-format */
+		(_ ("%F%P: %pB: copy relocation against non-copyable "
+		    "protected symbol `%s'\n"),
+		 p->sec->owner, h->root.root.string);
+	    return false;
+	  }
+      }
 
   /* In the shared -Bsymbolic case, discard space allocated for
      dynamic pc-relative relocs against symbols which turn out to be
@@ -9763,6 +10058,7 @@ get_plt_type (bfd *abfd)
   bfd_byte *contents, *extdyn, *extdynend;
   asection *sec = bfd_get_section_by_name (abfd, ".dynamic");
   if (!sec
+      || (sec->flags & SEC_HAS_CONTENTS) == 0
       || sec->size < sizeof (ElfNN_External_Dyn)
       || !bfd_malloc_and_get_section (abfd, sec, &contents))
     return ret;
@@ -10059,6 +10355,12 @@ const struct elf_size_info elfNN_aarch64_size_info =
 #define elf_backend_section_from_shdr		\
   elfNN_aarch64_section_from_shdr
 
+#define elf_backend_section_from_phdr		\
+  elfNN_aarch64_section_from_phdr
+
+#define elf_backend_modify_headers		\
+  elfNN_aarch64_modify_headers
+
 #define elf_backend_size_dynamic_sections	\
   elfNN_aarch64_size_dynamic_sections
 
@@ -10090,7 +10392,7 @@ const struct elf_size_info elfNN_aarch64_size_info =
 #define elf_backend_dtrel_excludes_plt 1
 #define elf_backend_got_header_size (GOT_ENTRY_SIZE * 3)
 #define elf_backend_default_execstack  0
-#define elf_backend_extern_protected_data 1
+#define elf_backend_extern_protected_data 0
 #define elf_backend_hash_symbol elf_aarch64_hash_symbol
 
 #undef	elf_backend_obj_attrs_section

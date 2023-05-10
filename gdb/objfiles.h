@@ -1,6 +1,6 @@
 /* Definitions for symbol file management in GDB.
 
-   Copyright (C) 1992-2022 Free Software Foundation, Inc.
+   Copyright (C) 1992-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -127,30 +127,19 @@ struct entry_info
   unsigned initialized : 1;
 };
 
-#define ALL_OBJFILE_OSECTIONS(objfile, osect)	\
-  for (osect = objfile->sections; osect < objfile->sections_end; osect++) \
-    if (osect->the_bfd_section == NULL)					\
-      {									\
-	/* Nothing.  */							\
-      }									\
-    else
-
 #define SECT_OFF_DATA(objfile) \
      ((objfile->sect_index_data == -1) \
-      ? (internal_error (__FILE__, __LINE__, \
-			 _("sect_index_data not initialized")), -1)	\
+      ? (internal_error (_("sect_index_data not initialized")), -1)	\
       : objfile->sect_index_data)
 
 #define SECT_OFF_RODATA(objfile) \
      ((objfile->sect_index_rodata == -1) \
-      ? (internal_error (__FILE__, __LINE__, \
-			 _("sect_index_rodata not initialized")), -1)	\
+      ? (internal_error (_("sect_index_rodata not initialized")), -1)	\
       : objfile->sect_index_rodata)
 
 #define SECT_OFF_TEXT(objfile) \
      ((objfile->sect_index_text == -1) \
-      ? (internal_error (__FILE__, __LINE__, \
-			 _("sect_index_text not initialized")), -1)	\
+      ? (internal_error (_("sect_index_text not initialized")), -1)	\
       : objfile->sect_index_text)
 
 /* Sometimes the .bss section is missing from the objfile, so we don't
@@ -382,6 +371,40 @@ private:
 
 typedef iterator_range<separate_debug_iterator> separate_debug_range;
 
+/* Sections in an objfile.  The section offsets are stored in the
+   OBJFILE.  */
+
+struct obj_section
+{
+  /* Relocation offset applied to the section.  */
+  CORE_ADDR offset () const;
+
+  /* Set the relocation offset applied to the section.  */
+  void set_offset (CORE_ADDR offset);
+
+  /* The memory address of the section (vma + offset).  */
+  CORE_ADDR addr () const
+  {
+    return bfd_section_vma (this->the_bfd_section) + this->offset ();
+  }
+
+  /* The one-passed-the-end memory address of the section
+     (vma + size + offset).  */
+  CORE_ADDR endaddr () const
+  {
+    return this->addr () + bfd_section_size (this->the_bfd_section);
+  }
+
+  /* BFD section pointer */
+  struct bfd_section *the_bfd_section;
+
+  /* Objfile this section is part of.  */
+  struct objfile *objfile;
+
+  /* True if this "overlay section" is mapped into an "overlay region".  */
+  int ovly_mapped;
+};
+
 /* Master structure for keeping track of each file from which
    gdb reads symbols.  There are several ways these get allocated: 1.
    The main symbol file, symfile_objfile, set by the symbol-file command,
@@ -401,7 +424,7 @@ struct objfile
 private:
 
   /* The only way to create an objfile is to call objfile::make.  */
-  objfile (bfd *, const char *, objfile_flags);
+  objfile (gdb_bfd_ref_ptr, const char *, objfile_flags);
 
 public:
 
@@ -414,8 +437,8 @@ public:
   ~objfile ();
 
   /* Create an objfile.  */
-  static objfile *make (bfd *bfd_, const char *name_, objfile_flags flags_,
-			objfile *parent = nullptr);
+  static objfile *make (gdb_bfd_ref_ptr bfd_, const char *name_,
+			objfile_flags flags_, objfile *parent = nullptr);
 
   /* Remove an objfile from the current program space, and free
      it.  */
@@ -597,7 +620,7 @@ public:
        section.  */
     gdb_assert (section->owner == nullptr || section->owner == this->obfd);
 
-    int idx = gdb_bfd_section_index (this->obfd, section);
+    int idx = gdb_bfd_section_index (this->obfd.get (), section);
     return this->section_offsets[idx];
   }
 
@@ -608,8 +631,70 @@ public:
        section.  */
     gdb_assert (section->owner == nullptr || section->owner == this->obfd);
 
-    int idx = gdb_bfd_section_index (this->obfd, section);
+    int idx = gdb_bfd_section_index (this->obfd.get (), section);
     this->section_offsets[idx] = offset;
+  }
+
+  class section_iterator
+  {
+  public:
+    section_iterator (const section_iterator &) = default;
+    section_iterator (section_iterator &&) = default;
+    section_iterator &operator= (const section_iterator &) = default;
+    section_iterator &operator= (section_iterator &&) = default;
+
+    typedef section_iterator self_type;
+    typedef obj_section *value_type;
+
+    value_type operator* ()
+    { return m_iter; }
+
+    section_iterator &operator++ ()
+    {
+      ++m_iter;
+      skip_null ();
+      return *this;
+    }
+
+    bool operator== (const section_iterator &other) const
+    { return m_iter == other.m_iter && m_end == other.m_end; }
+
+    bool operator!= (const section_iterator &other) const
+    { return !(*this == other); }
+
+  private:
+
+    friend class objfile;
+
+    section_iterator (obj_section *iter, obj_section *end)
+      : m_iter (iter),
+	m_end (end)
+    {
+      skip_null ();
+    }
+
+    void skip_null ()
+    {
+      while (m_iter < m_end && m_iter->the_bfd_section == nullptr)
+	++m_iter;
+    }
+
+    value_type m_iter;
+    value_type m_end;
+  };
+
+  iterator_range<section_iterator> sections ()
+  {
+    return (iterator_range<section_iterator>
+	    (section_iterator (sections_start, sections_end),
+	     section_iterator (sections_end, sections_end)));
+  }
+
+  iterator_range<section_iterator> sections () const
+  {
+    return (iterator_range<section_iterator>
+	    (section_iterator (sections_start, sections_end),
+	     section_iterator (sections_end, sections_end)));
   }
 
 private:
@@ -649,14 +734,21 @@ public:
   struct compunit_symtab *compunit_symtabs = nullptr;
 
   /* The object file's BFD.  Can be null if the objfile contains only
-     minimal symbols, e.g. the run time common symbols for SunOS4.  */
+     minimal symbols (e.g. the run time common symbols for SunOS4) or
+     if the objfile is a dynamic objfile (e.g. created by JIT reader
+     API).  */
 
-  bfd *obfd;
+  gdb_bfd_ref_ptr obfd;
 
-  /* The per-BFD data.  Note that this is treated specially if OBFD
-     is NULL.  */
+  /* The per-BFD data.  */
 
   struct objfile_per_bfd_storage *per_bfd = nullptr;
+
+  /* In some cases, the per_bfd object is owned by this objfile and
+     not by the BFD itself.  In this situation, this holds the owning
+     pointer.  */
+
+  std::unique_ptr<objfile_per_bfd_storage> per_bfd_storage;
 
   /* The modification timestamp of the object file, as of the last time
      we read its symbols.  */
@@ -666,7 +758,7 @@ public:
   /* Obstack to hold objects that should be freed when we load a new symbol
      table from this object file.  */
 
-  struct obstack objfile_obstack {};
+  auto_obstack objfile_obstack;
 
   /* Structure which keeps track of functions that manipulate objfile's
      of the same type as this objfile.  I.e. the function to read partial
@@ -682,7 +774,7 @@ public:
 
   /* Per objfile data-pointers required by other GDB modules.  */
 
-  REGISTRY_FIELDS {};
+  registry<objfile> registry_fields;
 
   /* Set of relocation offsets to apply to each section.
      The table is indexed by the_bfd_section->index, thus it is generally
@@ -709,16 +801,16 @@ public:
   int sect_index_bss = -1;
   int sect_index_rodata = -1;
 
-  /* These pointers are used to locate the section table, which
-     among other things, is used to map pc addresses into sections.
-     SECTIONS points to the first entry in the table, and
-     SECTIONS_END points to the first location past the last entry
-     in the table.  The table is stored on the objfile_obstack.  The
-     sections are indexed by the BFD section index; but the
-     structure data is only valid for certain sections
-     (e.g. non-empty, SEC_ALLOC).  */
+  /* These pointers are used to locate the section table, which among
+     other things, is used to map pc addresses into sections.
+     SECTIONS_START points to the first entry in the table, and
+     SECTIONS_END points to the first location past the last entry in
+     the table.  The table is stored on the objfile_obstack.  The
+     sections are indexed by the BFD section index; but the structure
+     data is only valid for certain sections (e.g. non-empty,
+     SEC_ALLOC).  */
 
-  struct obj_section *sections = nullptr;
+  struct obj_section *sections_start = nullptr;
   struct obj_section *sections_end = nullptr;
 
   /* GDB allows to have debug symbols in separate object files.  This is
@@ -796,46 +888,19 @@ struct objfile_deleter
 
 typedef std::unique_ptr<objfile, objfile_deleter> objfile_up;
 
-
-/* Sections in an objfile.  The section offsets are stored in the
-   OBJFILE.  */
-
-struct obj_section
+/* Relocation offset applied to the section.  */
+inline CORE_ADDR
+obj_section::offset () const
 {
-  /* Relocation offset applied to the section.  */
-  CORE_ADDR offset () const
-  {
-    return this->objfile->section_offset (this->the_bfd_section);
-  }
+  return this->objfile->section_offset (this->the_bfd_section);
+}
 
-  /* Set the relocation offset applied to the section.  */
-  void set_offset (CORE_ADDR offset)
-  {
-    this->objfile->set_section_offset (this->the_bfd_section, offset);
-  }
-
-  /* The memory address of the section (vma + offset).  */
-  CORE_ADDR addr () const
-  {
-    return bfd_section_vma (this->the_bfd_section) + this->offset ();
-  }
-
-  /* The one-passed-the-end memory address of the section
-     (vma + size + offset).  */
-  CORE_ADDR endaddr () const
-  {
-    return this->addr () + bfd_section_size (this->the_bfd_section);
-  }
-
-  /* BFD section pointer */
-  struct bfd_section *the_bfd_section;
-
-  /* Objfile this section is part of.  */
-  struct objfile *objfile;
-
-  /* True if this "overlay section" is mapped into an "overlay region".  */
-  int ovly_mapped;
-};
+/* Set the relocation offset applied to the section.  */
+inline void
+obj_section::set_offset (CORE_ADDR offset)
+{
+  this->objfile->set_section_offset (this->the_bfd_section, offset);
+}
 
 /* Declarations for functions defined in objfiles.c */
 
@@ -887,8 +952,8 @@ extern int have_minimal_symbols (void);
 
 extern struct obj_section *find_pc_section (CORE_ADDR pc);
 
-/* Return non-zero if PC is in a section called NAME.  */
-extern int pc_in_section (CORE_ADDR, const char *);
+/* Return true if PC is in a section called NAME.  */
+extern bool pc_in_section (CORE_ADDR, const char *);
 
 /* Return non-zero if PC is in a SVR4-style procedure linkage table
    section.  */
@@ -899,10 +964,6 @@ in_plt_section (CORE_ADDR pc)
   return (pc_in_section (pc, ".plt")
 	  || pc_in_section (pc, ".plt.sec"));
 }
-
-/* Keep a registry of per-objfile data-pointers required by other GDB
-   modules.  */
-DECLARE_REGISTRY(objfile);
 
 /* In normal use, the section map will be rebuilt by find_pc_section
    if objfiles have been added, removed or relocated since it was last

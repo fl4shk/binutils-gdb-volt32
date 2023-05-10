@@ -1,6 +1,6 @@
 /* Target-dependent code for GNU/Linux, architecture independent.
 
-   Copyright (C) 2009-2022 Free Software Foundation, Inc.
+   Copyright (C) 2009-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -42,6 +42,7 @@
 #include "gcore.h"
 #include "gcore-elf.h"
 #include "solib-svr4.h"
+#include "memtag.h"
 
 #include <ctype.h>
 #include <unordered_map>
@@ -192,25 +193,22 @@ enum
     LINUX_SIGRTMAX = 64,
   };
 
-static struct gdbarch_data *linux_gdbarch_data_handle;
-
 struct linux_gdbarch_data
 {
-  struct type *siginfo_type;
-  int num_disp_step_buffers;
+  struct type *siginfo_type = nullptr;
+  int num_disp_step_buffers = 0;
 };
 
-static void *
-init_linux_gdbarch_data (struct obstack *obstack)
-{
-  return obstack_zalloc<linux_gdbarch_data> (obstack);
-}
+static const registry<gdbarch>::key<linux_gdbarch_data>
+     linux_gdbarch_data_handle;
 
 static struct linux_gdbarch_data *
 get_linux_gdbarch_data (struct gdbarch *gdbarch)
 {
-  return ((struct linux_gdbarch_data *)
-	  gdbarch_data (gdbarch, linux_gdbarch_data_handle));
+  struct linux_gdbarch_data *result = linux_gdbarch_data_handle.get (gdbarch);
+  if (result == nullptr)
+    result = linux_gdbarch_data_handle.emplace (gdbarch);
+  return result;
 }
 
 /* Linux-specific cached data.  This is used by GDB for caching
@@ -235,7 +233,7 @@ struct linux_info
 };
 
 /* Per-inferior data key.  */
-static const struct inferior_key<linux_info> linux_inferior_data;
+static const registry<inferior>::key<linux_info> linux_inferior_data;
 
 /* Frees whatever allocated space there is to be freed and sets INF's
    linux cache data pointer to NULL.  */
@@ -244,6 +242,14 @@ static void
 invalidate_linux_cache_inf (struct inferior *inf)
 {
   linux_inferior_data.clear (inf);
+}
+
+/* inferior_execd observer.  */
+
+static void
+linux_inferior_execd (inferior *exec_inf, inferior *follow_inf)
+{
+  invalidate_linux_cache_inf (follow_inf);
 }
 
 /* Fetch the linux cache info for INF.  This function always returns a
@@ -277,13 +283,15 @@ linux_get_siginfo_type_with_fields (struct gdbarch *gdbarch,
   if (linux_gdbarch_data->siginfo_type != NULL)
     return linux_gdbarch_data->siginfo_type;
 
-  int_type = arch_integer_type (gdbarch, gdbarch_int_bit (gdbarch),
+  type_allocator alloc (gdbarch);
+
+  int_type = init_integer_type (alloc, gdbarch_int_bit (gdbarch),
 			 	0, "int");
-  uint_type = arch_integer_type (gdbarch, gdbarch_int_bit (gdbarch),
+  uint_type = init_integer_type (alloc, gdbarch_int_bit (gdbarch),
 				 1, "unsigned int");
-  long_type = arch_integer_type (gdbarch, gdbarch_long_bit (gdbarch),
+  long_type = init_integer_type (alloc, gdbarch_long_bit (gdbarch),
 				 0, "long");
-  short_type = arch_integer_type (gdbarch, gdbarch_long_bit (gdbarch),
+  short_type = init_integer_type (alloc, gdbarch_long_bit (gdbarch),
 				 0, "short");
   void_ptr_type = lookup_pointer_type (builtin_type (gdbarch)->builtin_void);
 
@@ -294,22 +302,24 @@ linux_get_siginfo_type_with_fields (struct gdbarch *gdbarch,
   append_composite_type_field (sigval_type, "sival_ptr", void_ptr_type);
 
   /* __pid_t */
-  pid_type = arch_type (gdbarch, TYPE_CODE_TYPEDEF,
-			TYPE_LENGTH (int_type) * TARGET_CHAR_BIT, "__pid_t");
-  TYPE_TARGET_TYPE (pid_type) = int_type;
+  pid_type = alloc.new_type (TYPE_CODE_TYPEDEF,
+			     int_type->length () * TARGET_CHAR_BIT,
+			     "__pid_t");
+  pid_type->set_target_type (int_type);
   pid_type->set_target_is_stub (true);
 
   /* __uid_t */
-  uid_type = arch_type (gdbarch, TYPE_CODE_TYPEDEF,
-			TYPE_LENGTH (uint_type) * TARGET_CHAR_BIT, "__uid_t");
-  TYPE_TARGET_TYPE (uid_type) = uint_type;
+  uid_type = alloc.new_type (TYPE_CODE_TYPEDEF,
+			     uint_type->length () * TARGET_CHAR_BIT,
+			     "__uid_t");
+  uid_type->set_target_type (uint_type);
   uid_type->set_target_is_stub (true);
 
   /* __clock_t */
-  clock_type = arch_type (gdbarch, TYPE_CODE_TYPEDEF,
-			  TYPE_LENGTH (long_type) * TARGET_CHAR_BIT,
-			  "__clock_t");
-  TYPE_TARGET_TYPE (clock_type) = long_type;
+  clock_type = alloc.new_type (TYPE_CODE_TYPEDEF,
+			       long_type->length () * TARGET_CHAR_BIT,
+			       "__clock_t");
+  clock_type->set_target_type (long_type);
   clock_type->set_target_is_stub (true);
 
   /* _sifields */
@@ -396,7 +406,7 @@ linux_get_siginfo_type_with_fields (struct gdbarch *gdbarch,
   append_composite_type_field (siginfo_type, "si_code", int_type);
   append_composite_type_field_aligned (siginfo_type,
 				       "_sifields", sifields_type,
-				       TYPE_LENGTH (long_type));
+				       long_type->length ());
 
   linux_gdbarch_data->siginfo_type = siginfo_type;
 
@@ -419,10 +429,9 @@ int
 linux_is_uclinux (void)
 {
   CORE_ADDR dummy;
-  target_ops *target = current_inferior ()->top_target ();
 
-  return (target_auxv_search (target, AT_NULL, &dummy) > 0
-	  && target_auxv_search (target, AT_PAGESZ, &dummy) == 0);
+  return (target_auxv_search (AT_NULL, &dummy) > 0
+	  && target_auxv_search (AT_PAGESZ, &dummy) == 0);
 }
 
 static int
@@ -815,7 +824,7 @@ linux_info_proc (struct gdbarch *gdbarch, const char *args,
   int status_f = (what == IP_STATUS || what == IP_ALL);
   int stat_f = (what == IP_STAT || what == IP_ALL);
   char filename[100];
-  int target_errno;
+  fileio_error target_errno;
 
   if (args && isdigit (args[0]))
     {
@@ -1320,6 +1329,7 @@ typedef int linux_find_memory_region_ftype (ULONGEST vaddr, ULONGEST size,
 					    ULONGEST offset, ULONGEST inode,
 					    int read, int write,
 					    int exec, int modified,
+					    bool memory_tagged,
 					    const char *filename,
 					    void *data);
 
@@ -1470,10 +1480,11 @@ parse_smaps_data (const char *data,
   return smaps;
 }
 
-/* See linux-tdep.h.  */
+/* Helper that checks if an address is in a memory tag page for a live
+   process.  */
 
-bool
-linux_address_in_memtag_page (CORE_ADDR address)
+static bool
+linux_process_address_in_memtag_page (CORE_ADDR address)
 {
   if (current_inferior ()->fake_pid_p)
     return false;
@@ -1503,6 +1514,30 @@ linux_address_in_memtag_page (CORE_ADDR address)
     }
 
   return false;
+}
+
+/* Helper that checks if an address is in a memory tag page for a core file
+   process.  */
+
+static bool
+linux_core_file_address_in_memtag_page (CORE_ADDR address)
+{
+  if (core_bfd == nullptr)
+    return false;
+
+  memtag_section_info info;
+  return get_next_core_memtag_section (core_bfd, nullptr, address, info);
+}
+
+/* See linux-tdep.h.  */
+
+bool
+linux_address_in_memtag_page (CORE_ADDR address)
+{
+  if (!target_has_execution ())
+    return linux_core_file_address_in_memtag_page (address);
+
+  return linux_process_address_in_memtag_page (address);
 }
 
 /* List memory regions in the inferior for a corefile.  */
@@ -1593,6 +1628,7 @@ linux_find_memory_regions_full (struct gdbarch *gdbarch,
 		map.offset, map.inode, map.read, map.write, map.exec,
 		1, /* MODIFIED is true because we want to dump
 		      the mapping.  */
+		map.vmflags.memory_tagging != 0,
 		map.filename.c_str (), obfd);
 	}
     }
@@ -1621,12 +1657,14 @@ static int
 linux_find_memory_regions_thunk (ULONGEST vaddr, ULONGEST size,
 				 ULONGEST offset, ULONGEST inode,
 				 int read, int write, int exec, int modified,
+				 bool memory_tagged,
 				 const char *filename, void *arg)
 {
   struct linux_find_memory_regions_data *data
     = (struct linux_find_memory_regions_data *) arg;
 
-  return data->func (vaddr, size, read, write, exec, modified, data->obfd);
+  return data->func (vaddr, size, read, write, exec, modified, memory_tagged,
+		     data->obfd);
 }
 
 /* A variant of linux_find_memory_regions_full that is suitable as the
@@ -1669,12 +1707,16 @@ struct linux_make_mappings_data
 static linux_find_memory_region_ftype linux_make_mappings_callback;
 
 /* A callback for linux_find_memory_regions_full that updates the
-   mappings data for linux_make_mappings_corefile_notes.  */
+   mappings data for linux_make_mappings_corefile_notes.
+
+   MEMORY_TAGGED is true if the memory region contains memory tags, false
+   otherwise.  */
 
 static int
 linux_make_mappings_callback (ULONGEST vaddr, ULONGEST size,
 			      ULONGEST offset, ULONGEST inode,
 			      int read, int write, int exec, int modified,
+			      bool memory_tagged,
 			      const char *filename, void *data)
 {
   struct linux_make_mappings_data *map_data
@@ -1687,11 +1729,11 @@ linux_make_mappings_callback (ULONGEST vaddr, ULONGEST size,
   ++map_data->file_count;
 
   pack_long (buf, map_data->long_type, vaddr);
-  obstack_grow (map_data->data_obstack, buf, TYPE_LENGTH (map_data->long_type));
+  obstack_grow (map_data->data_obstack, buf, map_data->long_type->length ());
   pack_long (buf, map_data->long_type, vaddr + size);
-  obstack_grow (map_data->data_obstack, buf, TYPE_LENGTH (map_data->long_type));
+  obstack_grow (map_data->data_obstack, buf, map_data->long_type->length ());
   pack_long (buf, map_data->long_type, offset);
-  obstack_grow (map_data->data_obstack, buf, TYPE_LENGTH (map_data->long_type));
+  obstack_grow (map_data->data_obstack, buf, map_data->long_type->length ());
 
   obstack_grow_str0 (map_data->filename_obstack, filename);
 
@@ -1708,8 +1750,9 @@ linux_make_mappings_corefile_notes (struct gdbarch *gdbarch, bfd *obfd,
 				    int *note_size)
 {
   struct linux_make_mappings_data mapping_data;
+  type_allocator alloc (gdbarch);
   struct type *long_type
-    = arch_integer_type (gdbarch, gdbarch_long_bit (gdbarch), 0, "long");
+    = init_integer_type (alloc, gdbarch_long_bit (gdbarch), 0, "long");
   gdb_byte buf[sizeof (ULONGEST)];
 
   auto_obstack data_obstack, filename_obstack;
@@ -1720,11 +1763,11 @@ linux_make_mappings_corefile_notes (struct gdbarch *gdbarch, bfd *obfd,
   mapping_data.long_type = long_type;
 
   /* Reserve space for the count.  */
-  obstack_blank (&data_obstack, TYPE_LENGTH (long_type));
+  obstack_blank (&data_obstack, long_type->length ());
   /* We always write the page size as 1 since we have no good way to
      determine the correct value.  */
   pack_long (buf, long_type, 1);
-  obstack_grow (&data_obstack, buf, TYPE_LENGTH (long_type));
+  obstack_grow (&data_obstack, buf, long_type->length ());
 
   linux_find_memory_regions_full (gdbarch, 
 				  dump_note_entry_p,
@@ -1766,12 +1809,12 @@ linux_get_siginfo_data (thread_info *thread, struct gdbarch *gdbarch)
 
   siginfo_type = gdbarch_get_siginfo_type (gdbarch);
 
-  gdb::byte_vector buf (TYPE_LENGTH (siginfo_type));
+  gdb::byte_vector buf (siginfo_type->length ());
 
   bytes_read = target_read (current_inferior ()->top_target (),
 			    TARGET_OBJECT_SIGNAL_INFO, NULL,
-			    buf.data (), 0, TYPE_LENGTH (siginfo_type));
-  if (bytes_read != TYPE_LENGTH (siginfo_type))
+			    buf.data (), 0, siginfo_type->length ());
+  if (bytes_read != siginfo_type->length ())
     buf.clear ();
 
   return buf;
@@ -2351,8 +2394,7 @@ linux_vsyscall_range_raw (struct gdbarch *gdbarch, struct mem_range *range)
   char filename[100];
   long pid;
 
-  if (target_auxv_search (current_inferior ()->top_target (),
-			  AT_SYSINFO_EHDR, &range->start) <= 0)
+  if (target_auxv_search (AT_SYSINFO_EHDR, &range->start) <= 0)
     return 0;
 
   /* It doesn't make sense to access the host's /proc when debugging a
@@ -2542,8 +2584,7 @@ linux_displaced_step_location (struct gdbarch *gdbarch)
      local-store address and is thus not usable as displaced stepping
      location.  The auxiliary vector gets us the PowerPC-side entry
      point address instead.  */
-  if (target_auxv_search (current_inferior ()->top_target (),
-			  AT_ENTRY, &addr) <= 0)
+  if (target_auxv_search (AT_ENTRY, &addr) <= 0)
     throw_error (NOT_SUPPORTED_ERROR,
 		 _("Cannot find AT_ENTRY auxiliary vector entry."));
 
@@ -2575,7 +2616,7 @@ linux_displaced_step_prepare (gdbarch *arch, thread_info *thread,
 	 at DISP_STEP_BUF_ADDR.  They are all of size BUF_LEN.  */
       CORE_ADDR disp_step_buf_addr
 	= linux_displaced_step_location (thread->inf->gdbarch);
-      int buf_len = gdbarch_max_insn_length (arch);
+      int buf_len = gdbarch_displaced_step_buffer_length (arch);
 
       linux_gdbarch_data *gdbarch_data = get_linux_gdbarch_data (arch);
       gdb_assert (gdbarch_data->num_disp_step_buffers > 0);
@@ -2593,13 +2634,14 @@ linux_displaced_step_prepare (gdbarch *arch, thread_info *thread,
 /* See linux-tdep.h.  */
 
 displaced_step_finish_status
-linux_displaced_step_finish (gdbarch *arch, thread_info *thread, gdb_signal sig)
+linux_displaced_step_finish (gdbarch *arch, thread_info *thread,
+			     const target_waitstatus &status)
 {
   linux_info *per_inferior = get_linux_inferior_data (thread->inf);
 
   gdb_assert (per_inferior->disp_step_bufs.has_value ());
 
-  return per_inferior->disp_step_bufs->finish (arch, thread, sig);
+  return per_inferior->disp_step_bufs->finish (arch, thread, status);
 }
 
 /* See linux-tdep.h.  */
@@ -2630,13 +2672,15 @@ linux_displaced_step_restore_all_in_ptid (inferior *parent_inf, ptid_t ptid)
   per_inferior->disp_step_bufs->restore_in_ptid (ptid);
 }
 
-/* See linux-tdep.h.  */
+/* Helper for linux_get_hwcap and linux_get_hwcap2.  */
 
-CORE_ADDR
-linux_get_hwcap (struct target_ops *target)
+static CORE_ADDR
+linux_get_hwcap_helper (const gdb::optional<gdb::byte_vector> &auxv,
+			target_ops *target, gdbarch *gdbarch, CORE_ADDR match)
 {
   CORE_ADDR field;
-  if (target_auxv_search (target, AT_HWCAP, &field) != 1)
+  if (!auxv.has_value ()
+      || target_auxv_search (*auxv, target, gdbarch, match, &field) != 1)
     return 0;
   return field;
 }
@@ -2644,12 +2688,39 @@ linux_get_hwcap (struct target_ops *target)
 /* See linux-tdep.h.  */
 
 CORE_ADDR
-linux_get_hwcap2 (struct target_ops *target)
+linux_get_hwcap (const gdb::optional<gdb::byte_vector> &auxv,
+		 target_ops *target, gdbarch *gdbarch)
 {
-  CORE_ADDR field;
-  if (target_auxv_search (target, AT_HWCAP2, &field) != 1)
-    return 0;
-  return field;
+  return linux_get_hwcap_helper (auxv, target, gdbarch, AT_HWCAP);
+}
+
+/* See linux-tdep.h.  */
+
+CORE_ADDR
+linux_get_hwcap ()
+{
+  return linux_get_hwcap (target_read_auxv (),
+			  current_inferior ()->top_target (),
+			  current_inferior ()->gdbarch);
+}
+
+/* See linux-tdep.h.  */
+
+CORE_ADDR
+linux_get_hwcap2 (const gdb::optional<gdb::byte_vector> &auxv,
+		  target_ops *target, gdbarch *gdbarch)
+{
+  return linux_get_hwcap_helper (auxv, target, gdbarch, AT_HWCAP2);
+}
+
+/* See linux-tdep.h.  */
+
+CORE_ADDR
+linux_get_hwcap2 ()
+{
+  return linux_get_hwcap2 (target_read_auxv (),
+			   current_inferior ()->top_target (),
+			   current_inferior ()->gdbarch);
 }
 
 /* Display whether the gcore command is using the
@@ -2721,15 +2792,12 @@ void _initialize_linux_tdep ();
 void
 _initialize_linux_tdep ()
 {
-  linux_gdbarch_data_handle =
-    gdbarch_data_register_pre_init (init_linux_gdbarch_data);
-
   /* Observers used to invalidate the cache when needed.  */
   gdb::observers::inferior_exit.attach (invalidate_linux_cache_inf,
 					"linux-tdep");
   gdb::observers::inferior_appeared.attach (invalidate_linux_cache_inf,
 					    "linux-tdep");
-  gdb::observers::inferior_execd.attach (invalidate_linux_cache_inf,
+  gdb::observers::inferior_execd.attach (linux_inferior_execd,
 					 "linux-tdep");
 
   add_setshow_boolean_cmd ("use-coredump-filter", class_files,
@@ -2775,6 +2843,7 @@ linux_ilp32_fetch_link_map_offsets ()
       lmo.r_map_offset = 4;
       lmo.r_brk_offset = 8;
       lmo.r_ldsomap_offset = -1;
+      lmo.r_next_offset = 20;
 
       /* Everything we need is in the first 20 bytes.  */
       lmo.link_map_size = 20;
@@ -2803,6 +2872,7 @@ linux_lp64_fetch_link_map_offsets ()
       lmo.r_map_offset = 8;
       lmo.r_brk_offset = 16;
       lmo.r_ldsomap_offset = -1;
+      lmo.r_next_offset = 40;
 
       /* Everything we need is in the first 40 bytes.  */
       lmo.link_map_size = 40;

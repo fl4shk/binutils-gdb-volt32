@@ -1,5 +1,5 @@
 /* debuginfod utilities for GDB.
-   Copyright (C) 2020-2022 Free Software Foundation, Inc.
+   Copyright (C) 2020-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -24,6 +24,7 @@
 #include "gdbsupport/gdb_optional.h"
 #include "cli/cli-cmds.h"
 #include "cli/cli-style.h"
+#include "cli-out.h"
 #include "target.h"
 
 /* Set/show debuginfod commands.  */
@@ -87,12 +88,12 @@ debuginfod_exec_query (const unsigned char *build_id,
 struct user_data
 {
   user_data (const char *desc, const char *fname)
-    : desc (desc), fname (fname), has_printed (false)
+    : desc (desc), fname (fname)
   { }
 
   const char * const desc;
   const char * const fname;
-  bool has_printed;
+  ui_out::progress_update progress;
 };
 
 /* Deleter for a debuginfod_client.  */
@@ -108,47 +109,74 @@ struct debuginfod_client_deleter
 using debuginfod_client_up
   = std::unique_ptr<debuginfod_client, debuginfod_client_deleter>;
 
+
+/* Convert SIZE into a unit suitable for use with progress updates.
+   SIZE should in given in bytes and will be converted into KB, MB, GB
+   or remain unchanged. UNIT will be set to "B", "KB", "MB" or "GB"
+   accordingly.  */
+
+static const char *
+get_size_and_unit (double &size)
+{
+  if (size < 1024)
+    /* If size is less than 1 KB then set unit to B.  */
+    return "B";
+
+  size /= 1024;
+  if (size < 1024)
+    /* If size is less than 1 MB then set unit to KB.  */
+    return "K";
+
+  size /= 1024;
+  if (size < 1024)
+    /* If size is less than 1 GB then set unit to MB.  */
+    return "M";
+
+  size /= 1024;
+  return "G";
+}
+
 static int
 progressfn (debuginfod_client *c, long cur, long total)
 {
   user_data *data = static_cast<user_data *> (debuginfod_get_user_data (c));
   gdb_assert (data != nullptr);
 
+  string_file styled_fname (current_uiout->can_emit_style_escape ());
+  fprintf_styled (&styled_fname, file_name_style.style (), "%s",
+		  data->fname);
+
   if (check_quit_flag ())
     {
-      gdb_printf ("Cancelling download of %s %ps...\n",
-		  data->desc,
-		  styled_string (file_name_style.style (), data->fname));
+      gdb_printf ("Cancelling download of %s %s...\n",
+		  data->desc, styled_fname.c_str ());
       return 1;
     }
 
-  if (!data->has_printed)
+  if (debuginfod_verbose == 0)
+    return 0;
+
+  /* Print progress update.  Include the transfer size if available.  */
+  if (total > 0)
     {
-      /* Include the transfer size, if available.  */
-      if (total > 0)
+      /* Transfer size is known.  */
+      double howmuch = (double) cur / (double) total;
+
+      if (howmuch >= 0.0 && howmuch <= 1.0)
 	{
-	  float size = 1.0f * total / 1024;
-	  const char *unit = "KB";
-
-	  /* If size is greater than 0.01 MB, set unit to MB.  */
-	  if (size > 10.24)
-	    {
-	      size /= 1024;
-	      unit = "MB";
-	    }
-
-	  gdb_printf ("Downloading %.2f %s %s %ps...\n",
-		      size, unit, data->desc,
-		      styled_string (file_name_style.style (),
-				     data->fname));
+	  double d_total = (double) total;
+	  const char *unit =  get_size_and_unit (d_total);
+	  std::string msg = string_printf ("Downloading %0.2f %s %s %s",
+					   d_total, unit, data->desc,
+					   styled_fname.c_str ());
+	  data->progress.update_progress (msg, unit, howmuch, d_total);
+	  return 0;
 	}
-      else
-	gdb_printf ("Downloading %s %ps...\n", data->desc,
-		    styled_string (file_name_style.style (), data->fname));
-
-      data->has_printed = true;
     }
 
+  std::string msg = string_printf ("Downloading %s %s",
+				   data->desc, styled_fname.c_str ());
+  data->progress.update_progress (msg);
   return 0;
 }
 
@@ -230,6 +258,18 @@ debuginfod_is_enabled ()
   return true;
 }
 
+/* Print the result of the most recent attempted download.  */
+
+static void
+print_outcome (int fd, const char *desc, const char *fname)
+{
+  if (fd < 0 && fd != -ENOENT)
+    gdb_printf (_("Download failed: %s.  Continuing without %s %ps.\n"),
+		safe_strerror (-fd),
+		desc,
+		styled_string (file_name_style.style (), fname));
+}
+
 /* See debuginfod-support.h  */
 
 scoped_fd
@@ -247,27 +287,28 @@ debuginfod_source_query (const unsigned char *build_id,
     return scoped_fd (-ENOMEM);
 
   char *dname = nullptr;
-  user_data data ("source file", srcpath);
-
-  debuginfod_set_user_data (c, &data);
+  scoped_fd fd;
   gdb::optional<target_terminal::scoped_restore_terminal_state> term_state;
-  if (target_supports_terminal_ours ())
-    {
-      term_state.emplace ();
-      target_terminal::ours ();
-    }
 
-  scoped_fd fd (debuginfod_find_source (c,
-					build_id,
-					build_id_len,
-					srcpath,
-					&dname));
-  debuginfod_set_user_data (c, nullptr);
+  {
+    user_data data ("source file", srcpath);
 
-  if (fd.get () < 0 && fd.get () != -ENOENT)
-    gdb_printf (_("Download failed: %s.  Continuing without source file %ps.\n"),
-		safe_strerror (-fd.get ()),
-		styled_string (file_name_style.style (),  srcpath));
+    debuginfod_set_user_data (c, &data);
+    if (target_supports_terminal_ours ())
+      {
+	term_state.emplace ();
+	target_terminal::ours ();
+      }
+
+    fd = scoped_fd (debuginfod_find_source (c,
+					    build_id,
+					    build_id_len,
+					    srcpath,
+					    &dname));
+    debuginfod_set_user_data (c, nullptr);
+  }
+
+  print_outcome (fd.get (), "source file", srcpath);
 
   if (fd.get () >= 0)
     destname->reset (dname);
@@ -292,24 +333,25 @@ debuginfod_debuginfo_query (const unsigned char *build_id,
     return scoped_fd (-ENOMEM);
 
   char *dname = nullptr;
-  user_data data ("separate debug info for", filename);
-
-  debuginfod_set_user_data (c, &data);
+  scoped_fd fd;
   gdb::optional<target_terminal::scoped_restore_terminal_state> term_state;
-  if (target_supports_terminal_ours ())
-    {
-      term_state.emplace ();
-      target_terminal::ours ();
-    }
 
-  scoped_fd fd (debuginfod_find_debuginfo (c, build_id, build_id_len,
-					   &dname));
-  debuginfod_set_user_data (c, nullptr);
+  {
+    user_data data ("separate debug info for", filename);
 
-  if (fd.get () < 0 && fd.get () != -ENOENT)
-    gdb_printf (_("Download failed: %s.  Continuing without debug info for %ps.\n"),
-		safe_strerror (-fd.get ()),
-		styled_string (file_name_style.style (),  filename));
+    debuginfod_set_user_data (c, &data);
+    if (target_supports_terminal_ours ())
+      {
+	term_state.emplace ();
+	target_terminal::ours ();
+      }
+
+    fd = scoped_fd (debuginfod_find_debuginfo (c, build_id, build_id_len,
+					       &dname));
+    debuginfod_set_user_data (c, nullptr);
+  }
+
+  print_outcome (fd.get (), "separate debug info for", filename);
 
   if (fd.get () >= 0)
     destname->reset (dname);
@@ -334,24 +376,25 @@ debuginfod_exec_query (const unsigned char *build_id,
     return scoped_fd (-ENOMEM);
 
   char *dname = nullptr;
-  user_data data ("executable for", filename);
-
-  debuginfod_set_user_data (c, &data);
+  scoped_fd fd;
   gdb::optional<target_terminal::scoped_restore_terminal_state> term_state;
-  if (target_supports_terminal_ours ())
-    {
-      term_state.emplace ();
-      target_terminal::ours ();
-    }
 
-  scoped_fd fd (debuginfod_find_executable (c, build_id, build_id_len, &dname));
-  debuginfod_set_user_data (c, nullptr);
+  {
+    user_data data ("executable for", filename);
 
-  if (fd.get () < 0 && fd.get () != -ENOENT)
-    gdb_printf (_("Download failed: %s. " \
-		  "Continuing without executable for %ps.\n"),
-		safe_strerror (-fd.get ()),
-		styled_string (file_name_style.style (),  filename));
+    debuginfod_set_user_data (c, &data);
+    if (target_supports_terminal_ours ())
+      {
+	term_state.emplace ();
+	target_terminal::ours ();
+      }
+
+    fd = scoped_fd (debuginfod_find_executable (c, build_id, build_id_len,
+						&dname));
+    debuginfod_set_user_data (c, nullptr);
+  }
+
+  print_outcome (fd.get (), "executable for", filename);
 
   if (fd.get () >= 0)
     destname->reset (dname);
@@ -368,7 +411,9 @@ set_debuginfod_enabled (const char *value)
 #if defined(HAVE_LIBDEBUGINFOD)
   debuginfod_enabled = value;
 #else
-  error (NO_IMPL);
+  /* Disabling debuginfod when gdb is not built with it is a no-op.  */
+  if (value != debuginfod_off)
+    error (NO_IMPL);
 #endif
 }
 

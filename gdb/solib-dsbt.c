@@ -1,5 +1,5 @@
 /* Handle TIC6X (DSBT) shared libraries for GDB, the GNU Debugger.
-   Copyright (C) 2010-2022 Free Software Foundation, Inc.
+   Copyright (C) 2010-2023 Free Software Foundation, Inc.
 
    This file is part of GDB.
 
@@ -29,6 +29,7 @@
 #include "gdbcmd.h"
 #include "elf-bfd.h"
 #include "gdb_bfd.h"
+#include "solib-dsbt.h"
 
 #define GOT_MODULE_OFFSET 4
 
@@ -164,7 +165,7 @@ struct dsbt_info
 };
 
 /* Per-program-space data key.  */
-static program_space_key<dsbt_info> solib_dsbt_pspace_data;
+static const registry<program_space>::key<dsbt_info> solib_dsbt_pspace_data;
 
 /* Get the current dsbt data.  If none is found yet, add it now.  This
    function always returns a valid object.  */
@@ -661,14 +662,6 @@ enable_break_failure_warning (void)
 	     "and track explicitly loaded dynamic code."));
 }
 
-/* Helper function for gdb_bfd_lookup_symbol.  */
-
-static int
-cmp_name (const asymbol *sym, const void *data)
-{
-  return (strcmp (sym->name, (const char *) data) == 0);
-}
-
 /* The dynamic linkers has, as part of its debugger interface, support
    for arranging for the inferior to hit a breakpoint after mapping in
    the shared libraries.  This function enables that breakpoint.
@@ -758,8 +751,13 @@ enable_break (void)
 	    = info->interp_plt_sect_low + bfd_section_size (interp_sect);
 	}
 
-      addr = gdb_bfd_lookup_symbol (tmp_bfd.get (), cmp_name,
-				    "_dl_debug_state");
+      addr = (gdb_bfd_lookup_symbol
+	      (tmp_bfd.get (),
+	       [] (const asymbol *sym)
+	       {
+		 return strcmp (sym->name, "_dl_debug_state") == 0;
+	       }));
+
       if (addr != 0)
 	{
 	  if (solib_dsbt_debug)
@@ -804,7 +802,6 @@ dsbt_relocate_main_executable (void)
 {
   struct int_elf32_dsbt_loadmap *ldm;
   int changed;
-  struct obj_section *osect;
   struct dsbt_info *info = get_dsbt_info ();
 
   dsbt_get_initial_loadmaps ();
@@ -818,13 +815,13 @@ dsbt_relocate_main_executable (void)
   section_offsets new_offsets (objf->section_offsets.size ());
   changed = 0;
 
-  ALL_OBJFILE_OSECTIONS (objf, osect)
+  for (obj_section *osect : objf->sections ())
     {
       CORE_ADDR orig_addr, addr, offset;
       int osect_idx;
       int seg;
 
-      osect_idx = osect - objf->sections;
+      osect_idx = osect - objf->sections_start;
 
       /* Current address of section.  */
       addr = osect->addr ();
@@ -924,21 +921,23 @@ show_dsbt_debug (struct ui_file *file, int from_tty,
   gdb_printf (file, _("solib-dsbt debugging is %s.\n"), value);
 }
 
-struct target_so_ops dsbt_so_ops;
+const struct target_so_ops dsbt_so_ops =
+{
+  dsbt_relocate_section_addresses,
+  dsbt_free_so,
+  nullptr,
+  dsbt_clear_solib,
+  dsbt_solib_create_inferior_hook,
+  dsbt_current_sos,
+  open_symbol_file_object,
+  dsbt_in_dynsym_resolve_code,
+  solib_bfd_open,
+};
 
 void _initialize_dsbt_solib ();
 void
 _initialize_dsbt_solib ()
 {
-  dsbt_so_ops.relocate_section_addresses = dsbt_relocate_section_addresses;
-  dsbt_so_ops.free_so = dsbt_free_so;
-  dsbt_so_ops.clear_solib = dsbt_clear_solib;
-  dsbt_so_ops.solib_create_inferior_hook = dsbt_solib_create_inferior_hook;
-  dsbt_so_ops.current_sos = dsbt_current_sos;
-  dsbt_so_ops.open_symbol_file_object = open_symbol_file_object;
-  dsbt_so_ops.in_dynsym_resolve_code = dsbt_in_dynsym_resolve_code;
-  dsbt_so_ops.bfd_open = solib_bfd_open;
-
   /* Debug this file's internals.  */
   add_setshow_zuinteger_cmd ("solib-dsbt", class_maintenance,
 			     &solib_dsbt_debug, _("\
