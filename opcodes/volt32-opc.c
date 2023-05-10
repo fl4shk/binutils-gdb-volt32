@@ -22,417 +22,493 @@
 #include "sysdep.h"
 #include "opcode/volt32.h"
 
-#define LMP_ANY {.i=VOLT32_LM_ANY, .d=VOLT32_LM_ANY}
-#define LMP_MANI_AUTOD {.i=VOLT32_LM_MAN, .d=VOLT32_LM_AUTO}
-#define LMP_MANI_ANYD {.i=VOLT32_LM_MAN, .d=VOLT32_LM_ANY}
-#define LMP_ANYI_MAND {.i=VOLT32_LM_ANY, .d=VOLT32_LM_MAN}
-#define LMP_BAD {.i=VOLT32_LM_BAD, .d=VOLT32_LM_BAD}
-#define LMP_AUTOI_ANYD {.i=VOLT32_LM_AUTO, .d=VOLT32_LM_ANY}
-#define LMP_ANYI_AUTOD {.i=VOLT32_LM_ANY, .d=VOLT32_LM_AUTO}
+static const volt32_oi_sub_elem_t
+  VOLT32_OI_SE_BLANK = {VOLT32_AF_BAD, ""},
+  VOLT32_OI_SE_BAD = {VOLT32_AF_BAD, "bad"};
+
+#define VOLT32_LMP_ANY {.i=VOLT32_LM_ANY, .d=VOLT32_LM_ANY}
+#define VOLT32_LMP_MANI_AUTOD {.i=VOLT32_LM_MAN, .d=VOLT32_LM_AUTO}
+#define VOLT32_LMP_MANI_ANYD {.i=VOLT32_LM_MAN, .d=VOLT32_LM_ANY}
+#define VOLT32_LMP_ANYI_MAND {.i=VOLT32_LM_ANY, .d=VOLT32_LM_MAN}
+#define VOLT32_LMP_BAD {.i=VOLT32_LM_BAD, .d=VOLT32_LM_BAD}
+#define VOLT32_LMP_AUTOI_ANYD {.i=VOLT32_LM_AUTO, .d=VOLT32_LM_ANY}
+#define VOLT32_LMP_ANYI_AUTOD {.i=VOLT32_LM_ANY, .d=VOLT32_LM_AUTO}
 /* -------- */
 const volt32_opc_info_t volt32_g0_opc_info[VOLT32_OI_G0_DIM] =
 {
   /* -------- */
-  {0x0, LMP_ANY, VOLT32_AF_D3, {"add.s", "add.v"}},
-  {0x1, LMP_ANY, VOLT32_AF_D3, {"sub.s", "sub.v"}},
-  {0x2, LMP_ANY, VOLT32_AF_D3, {"slt.s", "slt.v"}},
-  {0x3, LMP_ANY, VOLT32_AF_D3, {"mul.s", "mul.v"}},
+  {0x0, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "add.s"}, {VOLT32_AF_D3, "add.v"}}},
+  {0x1, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "sub.s"}, {VOLT32_AF_D3, "sub.v"}}},
+  {0x2, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "slt.s"}, {VOLT32_AF_D3, "slt.v"}}},
+  {0x3, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "mul.s"}, {VOLT32_AF_D3, "mul.v"}}},
 
-  {0x4, LMP_ANY, VOLT32_AF_D3, {"and.s", "and.v"}},
-  {0x5, LMP_ANY, VOLT32_AF_D3, {"or.s", "or.v"}},
-  {0x6, LMP_ANY, VOLT32_AF_D3, {"xor.s", "xor.v"}},
-  {0x7, LMP_ANY, VOLT32_AF_D3, {"shl.s", "shl.v"}},
+  {0x4, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "and.s"}, {VOLT32_AF_D3, "and.v"}}},
+  {0x5, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "or.s"}, {VOLT32_AF_D3, "or.v"}}},
+  {0x6, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "xor.s"}, {VOLT32_AF_D3, "xor.v"}}},
+  {0x7, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "shl.s"}, {VOLT32_AF_D3, "shl.v"}}},
   /* -------- */
-  {0x8, LMP_ANY, VOLT32_AF_D3, {"shr.s", "shr.v"}},
-  {0x9, LMP_ANY, VOLT32_AF_D3, {"rol.s", "rol.v"}},
-  {0xa, LMP_ANY, VOLT32_AF_D3, {"ror.s", "ror.v"}},
-  {0xb, LMP_ANY, VOLT32_AF_DA_DBA_DC, {"add.s", "add.v"}},
+  {0x8, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "shr.s"}, {VOLT32_AF_D3, "shr.v"}}},
+  {0x9, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "rol.s"}, {VOLT32_AF_D3, "rol.v"}}},
+  {0xa, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "ror.s"}, {VOLT32_AF_D3, "ror.v"}}},
+  {0xb, VOLT32_LMP_ANY, {{VOLT32_AF_DA_DBA_DC, "add.s"}, {VOLT32_AF_DA_DBA_DC, "add.v"}}},
 
-  {0xc, LMP_ANY, VOLT32_AF_DA_IBA_DC, {"add.s", "add.v"}},
-  {0xd, LMP_ANY, VOLT32_AF_DA_DBA_DC, {"shl.s", "shl.v"}},
-  {0xe, LMP_ANY, VOLT32_AF_D4, {"div.s", ""}},
-  {0xf, LMP_ANY, VOLT32_AF_D4, {"div.v", ""}},
+  {0xc, VOLT32_LMP_ANY, {{VOLT32_AF_DA_IBA_DC, "add.s"}, {VOLT32_AF_DA_IBA_DC, "add.v"}}},
+  {0xd, VOLT32_LMP_ANY, {{VOLT32_AF_DA_DBA_DC, "shl.s"}, {VOLT32_AF_DA_DBA_DC, "shl.v"}}},
+  {0xe, VOLT32_LMP_ANY, {{VOLT32_AF_D4, "div.s"}, VOLT32_OI_SE_BLANK}},
+  {0xf, VOLT32_LMP_ANY, {{VOLT32_AF_D4, "div.v"}, VOLT32_OI_SE_BLANK}},
   /* -------- */
 };
 const volt32_opc_info_t volt32_g1_opc_info[VOLT32_OI_G1_DIM] =
 {
   /* -------- */
-  {0x0, LMP_ANY, VOLT32_AF_D2, {"add.r", ""}},
-  {0x1, LMP_ANY, VOLT32_AF_D2, {"mul.r", ""}},
-  {0x2, LMP_ANY, VOLT32_AF_D2, {"max.r", ""}},
-  {0x3, LMP_ANY, VOLT32_AF_D2, {"min.r", ""}},
+  {0x0, VOLT32_LMP_ANY, {{VOLT32_AF_D2, "add.r"}, VOLT32_OI_SE_BLANK}},
+  {0x1, VOLT32_LMP_ANY, {{VOLT32_AF_D2, "mul.r"}, VOLT32_OI_SE_BLANK}},
+  {0x2, VOLT32_LMP_ANY, {{VOLT32_AF_D2, "max.r"}, VOLT32_OI_SE_BLANK}},
+  {0x3, VOLT32_LMP_ANY, {{VOLT32_AF_D2, "min.r"}, VOLT32_OI_SE_BLANK}},
 
-  {0x4, LMP_ANY, VOLT32_AF_D2, {"and.r", ""}},
-  {0x5, LMP_ANY, VOLT32_AF_D2, {"or.r", ""}},
-  {0x6, LMP_ANY, VOLT32_AF_D2, {"xor.r", ""}},
-  {0x7, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0x4, VOLT32_LMP_ANY, {{VOLT32_AF_D2, "and.r"}, VOLT32_OI_SE_BLANK}},
+  {0x5, VOLT32_LMP_ANY, {{VOLT32_AF_D2, "or.r"}, VOLT32_OI_SE_BLANK}},
+  {0x6, VOLT32_LMP_ANY, {{VOLT32_AF_D2, "xor.r"}, VOLT32_OI_SE_BLANK}},
+  {0x7, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
   /* -------- */
 };
 const volt32_opc_info_t volt32_g2_opc_info[VOLT32_OI_G2_DIM] =
 {
   /* -------- */
-  {0x0, LMP_ANYI_MAND, VOLT32_AF_D2_SIMM12, {"ldu8i", ""}},
-  {0x1, LMP_ANYI_MAND, VOLT32_AF_D2_SIMM12, {"lds8i", ""}},
-  {0x2, LMP_ANYI_MAND, VOLT32_AF_D2_SIMM12, {"ldu16i", ""}},
-  {0x3, LMP_ANYI_MAND, VOLT32_AF_D2_SIMM12, {"lds16i", ""}},
+  {0x0, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D2_SIMM12, "ldu8i"}, VOLT32_OI_SE_BLANK}},
+  {0x1, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D2_SIMM12, "lds8i"}, VOLT32_OI_SE_BLANK}},
+  {0x2, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D2_SIMM12, "ldu16i"}, VOLT32_OI_SE_BLANK}},
+  {0x3, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D2_SIMM12, "lds16i"}, VOLT32_OI_SE_BLANK}},
 
-  {0x4, LMP_ANYI_MAND, VOLT32_AF_D2_SIMM12, {"ldu32i", ""}},
-  {0x5, LMP_ANYI_MAND, VOLT32_AF_D2_SIMM12, {"lds32i", ""}},
-  {0x6, LMP_ANYI_MAND, VOLT32_AF_D2_SIMM12, {"ldu64i", ""}},
-  {0x7, LMP_ANYI_MAND, VOLT32_AF_D2_SIMM12, {"lds64i", ""}},
+  {0x4, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D2_SIMM12, "ldu32i"}, VOLT32_OI_SE_BLANK}},
+  {0x5, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D2_SIMM12, "lds32i"}, VOLT32_OI_SE_BLANK}},
+  {0x6, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D2_SIMM12, "ldu64i"}, VOLT32_OI_SE_BLANK}},
+  {0x7, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D2_SIMM12, "lds64i"}, VOLT32_OI_SE_BLANK}},
   /* -------- */
-  {0x8, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x9, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xa, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xb, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0x8, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x9, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xa, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xb, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
 
-  {0xc, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xd, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xe, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xf, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0xc, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xd, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xe, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xf, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
   /* -------- */
 };
+
 const volt32_opc_info_t volt32_g3_opc_info[VOLT32_OI_G3_DIM] =
 {
   /* -------- */
-  {0x0, LMP_ANYI_MAND, VOLT32_AF_DA_DBA_SIMM12, {"ldu8i", ""}},
-  {0x1, LMP_ANYI_MAND, VOLT32_AF_DA_DBA_SIMM12, {"lds8i", ""}},
-  {0x2, LMP_ANYI_MAND, VOLT32_AF_DA_DBA_SIMM12, {"ldu16i", ""}},
-  {0x3, LMP_ANYI_MAND, VOLT32_AF_DA_DBA_SIMM12, {"lds16i", ""}},
+  {0x0, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_DA_DBA_SIMM12, "ldu8i"}, VOLT32_OI_SE_BLANK}},
+  {0x1, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_DA_DBA_SIMM12, "lds8i"}, VOLT32_OI_SE_BLANK}},
+  {0x2, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_DA_DBA_SIMM12, "ldu16i"}, VOLT32_OI_SE_BLANK}},
+  {0x3, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_DA_DBA_SIMM12, "lds16i"}, VOLT32_OI_SE_BLANK}},
 
-  {0x4, LMP_ANYI_MAND, VOLT32_AF_DA_DBA_SIMM12, {"ldu32i", ""}},
-  {0x5, LMP_ANYI_MAND, VOLT32_AF_DA_DBA_SIMM12, {"lds32i", ""}},
-  {0x6, LMP_ANYI_MAND, VOLT32_AF_DA_DBA_SIMM12, {"ldu64i", ""}},
-  {0x7, LMP_ANYI_MAND, VOLT32_AF_DA_DBA_SIMM12, {"lds64i", ""}},
+  {0x4, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_DA_DBA_SIMM12, "ldu32i"}, VOLT32_OI_SE_BLANK}},
+  {0x5, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_DA_DBA_SIMM12, "lds32i"}, VOLT32_OI_SE_BLANK}},
+  {0x6, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_DA_DBA_SIMM12, "ldu64i"}, VOLT32_OI_SE_BLANK}},
+  {0x7, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_DA_DBA_SIMM12, "lds64i"}, VOLT32_OI_SE_BLANK}},
   /* -------- */
-  {0x8, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x9, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xa, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xb, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0x8, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x9, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xa, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xb, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
 
-  {0xc, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xd, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xe, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xf, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0xc, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xd, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xe, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xf, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
   /* -------- */
 };
 const volt32_opc_info_t volt32_g4_opc_info[VOLT32_OI_G4_DIM] =
 {
   /* -------- */
-  {0x0, LMP_ANYI_MAND, VOLT32_AF_D3, {"ldu8", ""}},
-  {0x1, LMP_ANYI_MAND, VOLT32_AF_D3, {"lds8", ""}},
-  {0x2, LMP_ANYI_MAND, VOLT32_AF_D3, {"ldu16", ""}},
-  {0x3, LMP_ANYI_MAND, VOLT32_AF_D3, {"lds16", ""}},
+  {0x0, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D3, "ldu8"}, VOLT32_OI_SE_BLANK}},
+  {0x1, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D3, "lds8"}, VOLT32_OI_SE_BLANK}},
+  {0x2, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D3, "ldu16"}, VOLT32_OI_SE_BLANK}},
+  {0x3, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D3, "lds16"}, VOLT32_OI_SE_BLANK}},
 
-  {0x4, LMP_ANYI_MAND, VOLT32_AF_D3, {"ldu32", ""}},
-  {0x5, LMP_ANYI_MAND, VOLT32_AF_D3, {"lds32", ""}},
-  {0x6, LMP_ANYI_MAND, VOLT32_AF_D3, {"ldu64", ""}},
-  {0x7, LMP_ANYI_MAND, VOLT32_AF_D3, {"lds64", ""}},
+  {0x4, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D3, "ldu32"}, VOLT32_OI_SE_BLANK}},
+  {0x5, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D3, "lds32"}, VOLT32_OI_SE_BLANK}},
+  {0x6, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D3, "ldu64"}, VOLT32_OI_SE_BLANK}},
+  {0x7, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D3, "lds64"}, VOLT32_OI_SE_BLANK}},
   /* -------- */
-  {0x8, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x9, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xa, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xb, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0x8, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x9, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xa, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xb, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
 
-  {0xc, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xd, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xe, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xf, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0xc, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xd, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xe, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xf, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
   /* -------- */
 };
 const volt32_opc_info_t volt32_g5_opc_info[VOLT32_OI_G5_DIM] =
 {
   /* -------- */
-  {0x0, LMP_ANYI_MAND, VOLT32_AF_D2_SIMM12, {"stu8i", ""}},
-  {0x1, LMP_ANYI_MAND, VOLT32_AF_D2_SIMM12, {"sts8i", ""}},
-  {0x2, LMP_ANYI_MAND, VOLT32_AF_D2_SIMM12, {"stu16i", ""}},
-  {0x3, LMP_ANYI_MAND, VOLT32_AF_D2_SIMM12, {"sts16i", ""}},
+  {0x0, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D2_SIMM12, "stu8i"}, VOLT32_OI_SE_BLANK}},
+  {0x1, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D2_SIMM12, "sts8i"}, VOLT32_OI_SE_BLANK}},
+  {0x2, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D2_SIMM12, "stu16i"}, VOLT32_OI_SE_BLANK}},
+  {0x3, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D2_SIMM12, "sts16i"}, VOLT32_OI_SE_BLANK}},
 
-  {0x4, LMP_ANYI_MAND, VOLT32_AF_D2_SIMM12, {"stu32i", ""}},
-  {0x5, LMP_ANYI_MAND, VOLT32_AF_D2_SIMM12, {"sts32i", ""}},
-  {0x6, LMP_ANYI_MAND, VOLT32_AF_D2_SIMM12, {"stu64i", ""}},
-  {0x7, LMP_ANYI_MAND, VOLT32_AF_D2_SIMM12, {"sts64i", ""}},
+  {0x4, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D2_SIMM12, "stu32i"}, VOLT32_OI_SE_BLANK}},
+  {0x5, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D2_SIMM12, "sts32i"}, VOLT32_OI_SE_BLANK}},
+  {0x6, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D2_SIMM12, "stu64i"}, VOLT32_OI_SE_BLANK}},
+  {0x7, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D2_SIMM12, "sts64i"}, VOLT32_OI_SE_BLANK}},
   /* -------- */
-  {0x8, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x9, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xa, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xb, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0x8, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x9, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xa, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xb, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
 
-  {0xc, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xd, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xe, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xf, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0xc, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xd, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xe, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xf, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
   /* -------- */
 };
 const volt32_opc_info_t volt32_g6_opc_info[VOLT32_OI_G6_DIM] =
 {
   /* -------- */
-  {0x0, LMP_ANY, VOLT32_AF_D2, {"dpu8", ""}},
-  {0x1, LMP_ANY, VOLT32_AF_D2, {"dps8", ""}},
-  {0x2, LMP_ANY, VOLT32_AF_D2, {"dpu16", ""}},
-  {0x3, LMP_ANY, VOLT32_AF_D2, {"dps16", ""}},
+  {0x0, VOLT32_LMP_ANY, {{VOLT32_AF_D2, "dpu8"}, VOLT32_OI_SE_BLANK}},
+  {0x1, VOLT32_LMP_ANY, {{VOLT32_AF_D2, "dps8"}, VOLT32_OI_SE_BLANK}},
+  {0x2, VOLT32_LMP_ANY, {{VOLT32_AF_D2, "dpu16"}, VOLT32_OI_SE_BLANK}},
+  {0x3, VOLT32_LMP_ANY, {{VOLT32_AF_D2, "dps16"}, VOLT32_OI_SE_BLANK}},
 
-  {0x4, LMP_ANY, VOLT32_AF_D2, {"dpu32", ""}},
-  {0x5, LMP_ANY, VOLT32_AF_D2, {"dps32", ""}},
-  {0x6, LMP_ANY, VOLT32_AF_D2, {"dpu64", ""}},
-  {0x7, LMP_ANY, VOLT32_AF_D2, {"dps64", ""}},
+  {0x4, VOLT32_LMP_ANY, {{VOLT32_AF_D2, "dpu32"}, VOLT32_OI_SE_BLANK}},
+  {0x5, VOLT32_LMP_ANY, {{VOLT32_AF_D2, "dps32"}, VOLT32_OI_SE_BLANK}},
+  {0x6, VOLT32_LMP_ANY, {{VOLT32_AF_D2, "dpu64"}, VOLT32_OI_SE_BLANK}},
+  {0x7, VOLT32_LMP_ANY, {{VOLT32_AF_D2, "dps64"}, VOLT32_OI_SE_BLANK}},
   /* -------- */
-  {0x8, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x9, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xa, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xb, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0x8, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x9, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xa, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xb, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
 
-  {0xc, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xd, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xe, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xf, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0xc, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xd, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xe, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xf, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
   /* -------- */
 };
 const volt32_opc_info_t volt32_g7_opc_info[VOLT32_OI_G7_DIM] =
 {
   /* -------- */
-  {0x0, LMP_MANI_ANYD, VOLT32_AF_IA_IB_DC_JIMM4, {"fetch", ""}},
-  {0x1, LMP_MANI_ANYD, VOLT32_AF_IA_IB_ISIMM11_JIMM4, {"fetchi", ""}},
+  {0x0, VOLT32_LMP_MANI_ANYD, {{VOLT32_AF_IA_IB_DC_JIMM4, "fetch"}, VOLT32_OI_SE_BLANK}},
+  {0x1, VOLT32_LMP_MANI_ANYD, {{VOLT32_AF_IA_IB_ISIMM11_JIMM4, "fetchi"}, VOLT32_OI_SE_BLANK}},
   /* -------- */
 };
 const volt32_opc_info_t volt32_g8_opc_info[VOLT32_OI_G8_DIM] =
 {
   /* -------- */
-  {0x0, LMP_MANI_ANYD, VOLT32_AF_DA_IB_IIMM5_JIMM5, {"sel.s", "sel.v"}},
-  {0x1, LMP_MANI_ANYD, VOLT32_AF_DA_IB_IIMM5, {"jz.s", "jz.v"}},
-  {0x2, LMP_MANI_ANYD, VOLT32_AF_DA_IB_IIMM5, {"jnz.s", "jnz.v"}},
-  {0x3, LMP_ANY, VOLT32_AF_D1, {"reti.s", "reti.v"}},
+  {0x0, VOLT32_LMP_MANI_ANYD, 
+    {{VOLT32_AF_DA_IB_IIMM5_JIMM5, "sel.s"}, {VOLT32_AF_DA_IB_IIMM5_JIMM5, "sel.v"}}},
+  {0x1, VOLT32_LMP_MANI_ANYD, {{VOLT32_AF_DA_IB_IIMM5, "jz.s"}, {VOLT32_AF_DA_IB_IIMM5, "jz.v"}}},
+  {0x2, VOLT32_LMP_MANI_ANYD, {{VOLT32_AF_DA_IB_IIMM5, "jnz.s"}, {VOLT32_AF_DA_IB_IIMM5, "jnz.v"}}},
+  {0x3, VOLT32_LMP_ANY, {{VOLT32_AF_D1, "reti.s"}, {VOLT32_AF_D1, "reti.v"}}},
 
-  {0x4, LMP_ANY, VOLT32_AF_D1, {"retx.s", "retx.v"}},
-  {0x5, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x6, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x7, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0x4, VOLT32_LMP_ANY, {{VOLT32_AF_D1, "retx.s"}, {VOLT32_AF_D1, "retx.v"}}},
+  {0x5, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x6, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x7, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
   /* -------- */
-  {0x8, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x9, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xa, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xb, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0x8, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x9, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xa, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xb, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
 
-  {0xc, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xd, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xe, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xf, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0xc, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xd, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xe, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xf, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
   /* -------- */
 };
 const volt32_opc_info_t volt32_g9_opc_info[VOLT32_OI_G9_DIM] =
 {
   /* -------- */
-  {0x0, LMP_ANYI_MAND, VOLT32_AF_D2_IMM6, {"getaddrs.U", "getaddrs.S"}},
-  {0x1, LMP_ANYI_MAND, VOLT32_AF_DA_IB_IMM6, {"getaddrs.U", "getaddrs.S"}},
-  {0x2, LMP_ANYI_MAND, VOLT32_AF_D2_IMM6, {"gettypes.U", "gettypes.S"}},
-  {0x3, LMP_ANYI_MAND, VOLT32_AF_D3_IMM6, {"ldm.U", "ldm.S"}},
+  {0x0, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D2_IMM6, "getaddrs.U"}, {VOLT32_AF_D2_IMM6, "getaddrs.S"}}},
+  {0x1, VOLT32_LMP_ANYI_MAND,
+    {{VOLT32_AF_DA_IB_IMM6, "getaddrs.U"}, {VOLT32_AF_DA_IB_IMM6, "getaddrs.S"}}},
+  {0x2, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D2_IMM6, "gettypes.U"}, {VOLT32_AF_D2_IMM6, "gettypes.S"}}},
+  {0x3, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D3_IMM6, "ldm.U"}, {VOLT32_AF_D3_IMM6, "ldm.S"}}},
 
-  {0x4, LMP_ANYI_MAND, VOLT32_AF_IA_DB_IMM6, {"fetchm.U", "fetchm.S"}},
-  {0x5, LMP_ANYI_MAND, VOLT32_AF_D1_IMM6, {"reload.U", "reload.S"}},
-  {0x6, LMP_ANYI_MAND, VOLT32_AF_IA_IMM6, {"reload.U", "reload.S"}},
-  {0x7, LMP_ANYI_MAND, VOLT32_AF_D1_IMM6, {"flush.U", "flush.S"}},
+  {0x4, VOLT32_LMP_ANYI_MAND,
+    {{VOLT32_AF_IA_DB_IMM6, "fetchm.U"}, {VOLT32_AF_IA_DB_IMM6, "fetchm.S"}}},
+  {0x5, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D1_IMM6, "reload.U"}, {VOLT32_AF_D1_IMM6, "reload.S"}}},
+  {0x6, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_IA_IMM6, "reload.U"}, {VOLT32_AF_IA_IMM6, "reload.S"}}},
+  {0x7, VOLT32_LMP_ANYI_MAND, {{VOLT32_AF_D1_IMM6, "flush.U"}, {VOLT32_AF_D1_IMM6, "flush.S"}}},
   /* -------- */
 };
 const volt32_opc_info_t volt32_g10_opc_info[VOLT32_OI_G10_DIM] =
 {
   /* -------- */
-  {0x0, LMP_ANY, VOLT32_AF_DA_INTEN, {"cpy.s", ""}},
-  {0x1, LMP_ANY, VOLT32_AF_INTEN_DA, {"cpy.s", ""}},
-  {0x2, LMP_ANY, VOLT32_AF_DA_XCT, {"cpy.s", ""}},
-  {0x3, LMP_ANY, VOLT32_AF_XCT_DA, {"cpy.s", ""}},
+  {0x0, VOLT32_LMP_ANY, {{VOLT32_AF_DA_INTEN, "cpy.s"}, VOLT32_OI_SE_BLANK}},
+  {0x1, VOLT32_LMP_ANY, {{VOLT32_AF_INTEN_DA, "cpy.s"}, VOLT32_OI_SE_BLANK}},
+  {0x2, VOLT32_LMP_ANY, {{VOLT32_AF_DA_XCT, "cpy.s"}, VOLT32_OI_SE_BLANK}},
+  {0x3, VOLT32_LMP_ANY, {{VOLT32_AF_XCT_DA, "cpy.s"}, VOLT32_OI_SE_BLANK}},
 
-  {0x4, LMP_ANY, VOLT32_AF_DA_SWIARG0, {"cpy.v", ""}},
-  {0x5, LMP_ANY, VOLT32_AF_SWIARG0_DA, {"cpy.v", ""}},
-  {0x6, LMP_ANY, VOLT32_AF_DA_SWIARG1, {"cpy.v", ""}},
-  {0x7, LMP_ANY, VOLT32_AF_SWIARG1_DA, {"cpy.v", ""}},
+  {0x4, VOLT32_LMP_ANY, {{VOLT32_AF_DA_SWIARG0, "cpy.v"}, VOLT32_OI_SE_BLANK}},
+  {0x5, VOLT32_LMP_ANY, {{VOLT32_AF_SWIARG0_DA, "cpy.v"}, VOLT32_OI_SE_BLANK}},
+  {0x6, VOLT32_LMP_ANY, {{VOLT32_AF_DA_SWIARG1, "cpy.v"}, VOLT32_OI_SE_BLANK}},
+  {0x7, VOLT32_LMP_ANY, {{VOLT32_AF_SWIARG1_DA, "cpy.v"}, VOLT32_OI_SE_BLANK}},
   /* -------- */
-  {0x8, LMP_ANY, VOLT32_AF_DA_SWIARG2, {"cpy.v", ""}},
-  {0x9, LMP_ANY, VOLT32_AF_SWIARG2_DA, {"cpy.v", ""}},
-  {0xa, LMP_ANY, VOLT32_AF_DA_SWIARG3, {"cpy.v", ""}},
-  {0xb, LMP_ANY, VOLT32_AF_SWIARG3_DA, {"cpy.v", ""}},
+  {0x8, VOLT32_LMP_ANY, {{VOLT32_AF_DA_SWIARG2, "cpy.v"}, VOLT32_OI_SE_BLANK}},
+  {0x9, VOLT32_LMP_ANY, {{VOLT32_AF_SWIARG2_DA, "cpy.v"}, VOLT32_OI_SE_BLANK}},
+  {0xa, VOLT32_LMP_ANY, {{VOLT32_AF_DA_SWIARG3, "cpy.v"}, VOLT32_OI_SE_BLANK}},
+  {0xb, VOLT32_LMP_ANY, {{VOLT32_AF_SWIARG3_DA, "cpy.v"}, VOLT32_OI_SE_BLANK}},
 
-  {0xc, LMP_ANY, VOLT32_AF_D4, {"swi", ""}},
-  {0xd, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xe, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xf, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0xc, VOLT32_LMP_ANY, {{VOLT32_AF_D4, "swi"}, VOLT32_OI_SE_BLANK}},
+  {0xd, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xe, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xf, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
   /* -------- */
 };
 const volt32_opc_info_t volt32_g11_opc_info[VOLT32_OI_G11_DIM] =
 {
   /* -------- */
-  {0x0, LMP_ANY, VOLT32_AF_D3, {"inu8.s", "inu8.v"}},
-  {0x1, LMP_ANY, VOLT32_AF_D3, {"ins8.s", "ins8.v"}},
-  {0x2, LMP_ANY, VOLT32_AF_D3, {"inu16.s", "inu16.v"}},
-  {0x3, LMP_ANY, VOLT32_AF_D3, {"ins16.s", "ins16.v"}},
+  {0x0, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "inu8.s"}, {VOLT32_AF_D3, "inu8.v"}}},
+  {0x1, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "ins8.s"}, {VOLT32_AF_D3, "ins8.v"}}},
+  {0x2, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "inu16.s"}, {VOLT32_AF_D3, "inu16.v"}}},
+  {0x3, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "ins16.s"}, {VOLT32_AF_D3, "ins16.v"}}},
 
-  {0x4, LMP_ANY, VOLT32_AF_D3, {"inu32.s", "inu32.v"}},
-  {0x5, LMP_ANY, VOLT32_AF_D3, {"ins32.s", "ins32.v"}},
-  {0x6, LMP_ANY, VOLT32_AF_D3, {"inu64.s", "inu64.v"}},
-  {0x7, LMP_ANY, VOLT32_AF_D3, {"ins64.s", "ins64.v"}},
+  {0x4, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "inu32.s"}, {VOLT32_AF_D3, "inu32.v"}}},
+  {0x5, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "ins32.s"}, {VOLT32_AF_D3, "ins32.v"}}},
+  {0x6, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "inu64.s"}, {VOLT32_AF_D3, "inu64.v"}}},
+  {0x7, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "ins64.s"}, {VOLT32_AF_D3, "ins64.v"}}},
   /* -------- */
-  {0x8, LMP_ANY, VOLT32_AF_BAD, {"bad", ""}},
-  {0x9, LMP_ANY, VOLT32_AF_BAD, {"bad", ""}},
-  {0xa, LMP_ANY, VOLT32_AF_BAD, {"bad", ""}},
-  {0xb, LMP_ANY, VOLT32_AF_BAD, {"bad", ""}},
+  {0x8, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x9, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xa, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xb, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
 
-  {0xc, LMP_ANY, VOLT32_AF_BAD, {"bad", ""}},
-  {0xd, LMP_ANY, VOLT32_AF_BAD, {"bad", ""}},
-  {0xe, LMP_ANY, VOLT32_AF_BAD, {"bad", ""}},
-  {0xf, LMP_ANY, VOLT32_AF_BAD, {"bad", ""}},
+  {0xc, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xd, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xe, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xf, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
   /* -------- */
-  {0x10, LMP_ANY, VOLT32_AF_D3, {"outu8.s", "outu8.v"}},
-  {0x11, LMP_ANY, VOLT32_AF_D3, {"outs8.s", "outs8.v"}},
-  {0x12, LMP_ANY, VOLT32_AF_D3, {"outu16.s", "outu16.v"}},
-  {0x13, LMP_ANY, VOLT32_AF_D3, {"outs16.s", "outs16.v"}},
+  {0x10, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "outu8.s"}, {VOLT32_AF_D3, "outu8.v"}}},
+  {0x11, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "outs8.s"}, {VOLT32_AF_D3, "outs8.v"}}},
+  {0x12, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "outu16.s"}, {VOLT32_AF_D3, "outu16.v"}}},
+  {0x13, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "outs16.s"}, {VOLT32_AF_D3, "outs16.v"}}},
 
-  {0x14, LMP_ANY, VOLT32_AF_D3, {"outu32.s", "outu32.v"}},
-  {0x15, LMP_ANY, VOLT32_AF_D3, {"outs32.s", "outs32.v"}},
-  {0x16, LMP_ANY, VOLT32_AF_D3, {"outu64.s", "outu64.v"}},
-  {0x17, LMP_ANY, VOLT32_AF_D3, {"outs64.s", "outs64.v"}},
+  {0x14, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "outu32.s"}, {VOLT32_AF_D3, "outu32.v"}}},
+  {0x15, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "outs32.s"}, {VOLT32_AF_D3, "outs32.v"}}},
+  {0x16, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "outu64.s"}, {VOLT32_AF_D3, "outu64.v"}}},
+  {0x17, VOLT32_LMP_ANY, {{VOLT32_AF_D3, "outs64.s"}, {VOLT32_AF_D3, "outs64.v"}}},
   /* -------- */
-  {0x18, LMP_ANY, VOLT32_AF_BAD, {"bad", ""}},
-  {0x19, LMP_ANY, VOLT32_AF_BAD, {"bad", ""}},
-  {0x1a, LMP_ANY, VOLT32_AF_BAD, {"bad", ""}},
-  {0x1b, LMP_ANY, VOLT32_AF_BAD, {"bad", ""}},
+  {0x18, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x19, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x1a, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x1b, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
 
-  {0x1c, LMP_ANY, VOLT32_AF_BAD, {"bad", ""}},
-  {0x1d, LMP_ANY, VOLT32_AF_BAD, {"bad", ""}},
-  {0x1e, LMP_ANY, VOLT32_AF_BAD, {"bad", ""}},
-  {0x1f, LMP_ANY, VOLT32_AF_BAD, {"bad", ""}},
+  {0x1c, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x1d, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x1e, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x1f, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
   /* -------- */
 };
 const volt32_opc_info_t volt32_g12_opc_info[VOLT32_OI_G12_DIM] =
 {
   /* -------- */
-  {0x0, LMP_ANY, VOLT32_AF_D1_SIMM21, {"cpyi.s", ""}},
-  {0x1, LMP_ANY, VOLT32_AF_D1_IPCA_SIMM21, {"addi.s", ""}},
+  {0x0, VOLT32_LMP_ANY, {{VOLT32_AF_D1_SIMM20, "cpyi.s"}, VOLT32_OI_SE_BLANK}},
+  {0x1, VOLT32_LMP_ANY, {{VOLT32_AF_D1_IPCA_SIMM20, "addi.s"}, VOLT32_OI_SE_BLANK}},
   /* -------- */
 };
 /* -------- */
+const volt32_opc_info_t volt32_g13_opc_info[VOLT32_OI_G13_DIM] =
+{
+  {0x0, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+};
+const volt32_opc_info_t volt32_g14_opc_info[VOLT32_OI_G14_DIM] =
+{
+  {0x0, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+};
+const volt32_opc_info_t volt32_g15_opc_info[VOLT32_OI_G15_DIM] =
+{
+  {0x0, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+};
+/* -------- */
+/* Pseudo instructions' `volt32_opc_info_t` */
 const volt32_opc_info_t volt32_ps_opc_info[VOLT32_OI_PS_DIM] =
 {
   /* -------- */
-  {0x0, LMP_AUTOI_ANYD, VOLT32_OIAFPS_D2_SIMM11, {"jdz.s", "jdz.v"}},
-  {0x1, LMP_AUTOI_ANYD, VOLT32_OIAFPS_D2_SIMM11, {"jdnz.s", "jdnz.v"}},
-  {0x2, LMP_AUTOI_ANYD, VOLT32_OIAFPS_BRANCH_SIMM21, {"bz.s", "bz.v"}},
-  {0x3, LMP_AUTOI_ANYD, VOLT32_OIAFPS_BRANCH_SIMM21, {"bnz.s", "bnz.v"}},
+  {0x0, VOLT32_LMP_AUTOI_ANYD,
+    {{VOLT32_OIAFPS_D2_SIMM11, "jdz.s"}, {VOLT32_OIAFPS_D2_SIMM11, "jdz.v"}}},
+  {0x1, VOLT32_LMP_AUTOI_ANYD,
+    {{VOLT32_OIAFPS_D2_SIMM11, "jdnz.s"}, {VOLT32_OIAFPS_D2_SIMM11, "jdnz.v"}}},
+  {0x2, VOLT32_LMP_AUTOI_ANYD, 
+    {{VOLT32_OIAFPS_BRANCH_SIMM20, "bz.s"}, {VOLT32_OIAFPS_BRANCH_SIMM20, "bz.v"}}},
+  {0x3, VOLT32_LMP_AUTOI_ANYD,
+    {{VOLT32_OIAFPS_BRANCH_SIMM20, "bnz.s"}, {VOLT32_OIAFPS_BRANCH_SIMM20, "bnz.v"}}},
 
-  {0x4, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x5, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x6, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x7, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0x4, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x5, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x6, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x7, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
   /* -------- */
-  {0x8, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x9, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xa, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xb, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0x8, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x9, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xa, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xb, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
 
-  {0xc, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xd, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xe, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0xf, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0xc, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xd, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xe, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0xf, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
   /* -------- */
-  {0x10, LMP_ANYI_AUTOD, VOLT32_AF_D2_SIMM12, {"ldu8i.s", "ldu8i.v"}},
-  {0x11, LMP_ANYI_AUTOD, VOLT32_AF_D2_SIMM12, {"lds8i.s", "lds8i.v"}},
-  {0x12, LMP_ANYI_AUTOD, VOLT32_AF_D2_SIMM12, {"ldu16i.s", "ldu16i.v"}},
-  {0x13, LMP_ANYI_AUTOD, VOLT32_AF_D2_SIMM12, {"lds16i.s", "lds16i.v"}},
+  {0x10, VOLT32_LMP_ANYI_AUTOD, {{VOLT32_AF_D2_SIMM12, "ldu8i.s"}, {VOLT32_AF_D2_SIMM12, "ldu8i.v"}}},
+  {0x11, VOLT32_LMP_ANYI_AUTOD, {{VOLT32_AF_D2_SIMM12, "lds8i.s"}, {VOLT32_AF_D2_SIMM12, "lds8i.v"}}},
+  {0x12, VOLT32_LMP_ANYI_AUTOD,
+    {{VOLT32_AF_D2_SIMM12, "ldu16i.s"}, {VOLT32_AF_D2_SIMM12, "ldu16i.v"}}},
+  {0x13, VOLT32_LMP_ANYI_AUTOD,
+    {{VOLT32_AF_D2_SIMM12, "lds16i.s"}, {VOLT32_AF_D2_SIMM12, "lds16i.v"}}},
 
-  {0x14, LMP_ANYI_AUTOD, VOLT32_AF_D2_SIMM12, {"ldu32i.s", "ldu32i.v"}},
-  {0x15, LMP_ANYI_AUTOD, VOLT32_AF_D2_SIMM12, {"lds32i.s", "lds32i.v"}},
-  {0x16, LMP_ANYI_AUTOD, VOLT32_AF_D2_SIMM12, {"ldu64i.s", "ldu64i.v"}},
-  {0x17, LMP_ANYI_AUTOD, VOLT32_AF_D2_SIMM12, {"lds64i.s", "lds64i.v"}},
-  /* -------- */
-  /* Reserved for future load type tags */
-  {0x18, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x19, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x1a, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x1b, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-
-  {0x1c, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x1d, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x1e, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x1f, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  /* -------- */
-  {0x20, LMP_ANYI_AUTOD, VOLT32_AF_D3, {"ldu8.s", "ldu8.v"}},
-  {0x21, LMP_ANYI_AUTOD, VOLT32_AF_D3, {"lds8.s", "lds8.v"}},
-  {0x22, LMP_ANYI_AUTOD, VOLT32_AF_D3, {"ldu16.s", "ldu16.v"}},
-  {0x23, LMP_ANYI_AUTOD, VOLT32_AF_D3, {"lds16.s", "lds16.v"}},
-
-  {0x24, LMP_ANYI_AUTOD, VOLT32_AF_D3, {"ldu32.s", "ldu32.v"}},
-  {0x25, LMP_ANYI_AUTOD, VOLT32_AF_D3, {"lds32.s", "lds32.v"}},
-  {0x26, LMP_ANYI_AUTOD, VOLT32_AF_D3, {"ldu64.s", "ldu64.v"}},
-  {0x27, LMP_ANYI_AUTOD, VOLT32_AF_D3, {"lds64.s", "lds64.v"}},
+  {0x14, VOLT32_LMP_ANYI_AUTOD,
+    {{VOLT32_AF_D2_SIMM12, "ldu32i.s"}, {VOLT32_AF_D2_SIMM12, "ldu32i.v"}}},
+  {0x15, VOLT32_LMP_ANYI_AUTOD,
+    {{VOLT32_AF_D2_SIMM12, "lds32i.s"}, {VOLT32_AF_D2_SIMM12, "lds32i.v"}}},
+  {0x16, VOLT32_LMP_ANYI_AUTOD,
+    {{VOLT32_AF_D2_SIMM12, "ldu64i.s"}, {VOLT32_AF_D2_SIMM12, "ldu64i.v"}}},
+  {0x17, VOLT32_LMP_ANYI_AUTOD,
+    {{VOLT32_AF_D2_SIMM12, "lds64i.s"}, {VOLT32_AF_D2_SIMM12, "lds64i.v"}}},
   /* -------- */
   /* Reserved for future load type tags */
-  {0x28, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x29, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x2a, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x2b, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0x18, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x19, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x1a, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x1b, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
 
-  {0x2c, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x2d, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x2e, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x2f, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0x1c, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x1d, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x1e, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x1f, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
   /* -------- */
-  {0x30, LMP_ANYI_AUTOD, VOLT32_AF_D2_SIMM12, {"stu8i.s", "stu8i.v"}},
-  {0x31, LMP_ANYI_AUTOD, VOLT32_AF_D2_SIMM12, {"sts8i.s", "sts8i.v"}},
-  {0x32, LMP_ANYI_AUTOD, VOLT32_AF_D2_SIMM12, {"stu16i.s", "stu16i.v"}},
-  {0x33, LMP_ANYI_AUTOD, VOLT32_AF_D2_SIMM12, {"sts16i.s", "sts16i.v"}},
+  {0x20, VOLT32_LMP_ANYI_AUTOD, {{VOLT32_AF_D3, "ldu8.s"}, {VOLT32_AF_D3, "ldu8.v"}}},
+  {0x21, VOLT32_LMP_ANYI_AUTOD, {{VOLT32_AF_D3, "lds8.s"}, {VOLT32_AF_D3, "lds8.v"}}},
+  {0x22, VOLT32_LMP_ANYI_AUTOD, {{VOLT32_AF_D3, "ldu16.s"}, {VOLT32_AF_D3, "ldu16.v"}}},
+  {0x23, VOLT32_LMP_ANYI_AUTOD, {{VOLT32_AF_D3, "lds16.s"}, {VOLT32_AF_D3, "lds16.v"}}},
 
-  {0x34, LMP_ANYI_AUTOD, VOLT32_AF_D2_SIMM12, {"stu32i.s", "stu32i.v"}},
-  {0x35, LMP_ANYI_AUTOD, VOLT32_AF_D2_SIMM12, {"sts32i.s", "sts32i.v"}},
-  {0x36, LMP_ANYI_AUTOD, VOLT32_AF_D2_SIMM12, {"stu64i.s", "stu64i.v"}},
-  {0x37, LMP_ANYI_AUTOD, VOLT32_AF_D2_SIMM12, {"sts64i.s", "sts64i.v"}},
+  {0x24, VOLT32_LMP_ANYI_AUTOD, {{VOLT32_AF_D3, "ldu32.s"}, {VOLT32_AF_D3, "ldu32.v"}}},
+  {0x25, VOLT32_LMP_ANYI_AUTOD, {{VOLT32_AF_D3, "lds32.s"}, {VOLT32_AF_D3, "lds32.v"}}},
+  {0x26, VOLT32_LMP_ANYI_AUTOD, {{VOLT32_AF_D3, "ldu64.s"}, {VOLT32_AF_D3, "ldu64.v"}}},
+  {0x27, VOLT32_LMP_ANYI_AUTOD, {{VOLT32_AF_D3, "lds64.s"}, {VOLT32_AF_D3, "lds64.v"}}},
+  /* -------- */
+  /* Reserved for future load type tags */
+  {0x28, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x29, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x2a, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x2b, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+
+  {0x2c, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x2d, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x2e, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x2f, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  /* -------- */
+  {0x30, VOLT32_LMP_ANYI_AUTOD, {{VOLT32_AF_D2_SIMM12, "stu8i.s"}, {VOLT32_AF_D2_SIMM12, "stu8i.v"}}},
+  {0x31, VOLT32_LMP_ANYI_AUTOD, {{VOLT32_AF_D2_SIMM12, "sts8i.s"}, {VOLT32_AF_D2_SIMM12, "sts8i.v"}}},
+  {0x32, VOLT32_LMP_ANYI_AUTOD,
+    {{VOLT32_AF_D2_SIMM12, "stu16i.s"}, {VOLT32_AF_D2_SIMM12, "stu16i.v"}}},
+  {0x33, VOLT32_LMP_ANYI_AUTOD,
+    {{VOLT32_AF_D2_SIMM12, "sts16i.s"}, {VOLT32_AF_D2_SIMM12, "sts16i.v"}}},
+
+  {0x34, VOLT32_LMP_ANYI_AUTOD,
+    {{VOLT32_AF_D2_SIMM12, "stu32i.s"}, {VOLT32_AF_D2_SIMM12, "stu32i.v"}}},
+  {0x35, VOLT32_LMP_ANYI_AUTOD,
+    {{VOLT32_AF_D2_SIMM12, "sts32i.s"}, {VOLT32_AF_D2_SIMM12, "sts32i.v"}}},
+  {0x36, VOLT32_LMP_ANYI_AUTOD,
+    {{VOLT32_AF_D2_SIMM12, "stu64i.s"}, {VOLT32_AF_D2_SIMM12, "stu64i.v"}}},
+  {0x37, VOLT32_LMP_ANYI_AUTOD,
+    {{VOLT32_AF_D2_SIMM12, "sts64i.s"}, {VOLT32_AF_D2_SIMM12, "sts64i.v"}}},
   /* -------- */
   /* Reserved for future store type tags */
-  {0x38, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x39, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x3a, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x3b, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0x38, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x39, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x3a, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x3b, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
 
-  {0x3c, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x3d, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x3e, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x3f, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0x3c, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x3d, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x3e, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x3f, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
   /* -------- */
-  {0x40, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x41, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x42, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x43, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0x40, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x41, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x42, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x43, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
 
-  {0x44, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x45, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x46, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x47, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0x44, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x45, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x46, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x47, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
   /* -------- */
-  {0x48, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x49, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x4a, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x4b, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0x48, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x49, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x4a, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x4b, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
 
-  {0x4c, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x4d, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x4e, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
-  {0x4f, LMP_BAD, VOLT32_AF_BAD, {"bad", ""}},
+  {0x4c, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x4d, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x4e, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
+  {0x4f, VOLT32_LMP_BAD, {VOLT32_OI_SE_BAD, VOLT32_OI_SE_BLANK}},
   /* -------- */
 };
 /* -------- */
-const volt32_opc_info_t **volt32_raw_opc_info_arr[VOLT32_NUM_OI_GRPS] =
+//const int32_t test_2 = test_arr[2][3];
+/* -------- */
+//const volt32_opc_info_t **volt32_raw_opc_info_arr[VOLT32_OI_NUM_GRPS] =
+//{
+//  /* -------- */
+//  &volt32_g0_opc_info,
+//  &volt32_g1_opc_info,
+//  &volt32_g2_opc_info,
+//  &volt32_g3_opc_info,
+//  &volt32_g4_opc_info,
+//  &volt32_g5_opc_info,
+//  &volt32_g6_opc_info,
+//  &volt32_g7_opc_info,
+//  &volt32_g8_opc_info,
+//  &volt32_g9_opc_info,
+//  &volt32_g10_opc_info,
+//  &volt32_g11_opc_info,
+//  &volt32_g12_opc_info,
+//  /* -------- */
+//};
+
+volt32_oi_decode_t volt32_oi_decode(int32_t group, int32_t opcode)
 {
-  /* -------- */
-  (const volt32_opc_info_t **)&volt32_g0_opc_info,
-  (const volt32_opc_info_t **)&volt32_g1_opc_info,
-  (const volt32_opc_info_t **)&volt32_g2_opc_info,
-  (const volt32_opc_info_t **)&volt32_g3_opc_info,
-  (const volt32_opc_info_t **)&volt32_g4_opc_info,
-  (const volt32_opc_info_t **)&volt32_g5_opc_info,
-  (const volt32_opc_info_t **)&volt32_g6_opc_info,
-  (const volt32_opc_info_t **)&volt32_g7_opc_info,
-  (const volt32_opc_info_t **)&volt32_g8_opc_info,
-  (const volt32_opc_info_t **)&volt32_g9_opc_info,
-  (const volt32_opc_info_t **)&volt32_g10_opc_info,
-  (const volt32_opc_info_t **)&volt32_g11_opc_info,
-  (const volt32_opc_info_t **)&volt32_g12_opc_info,
-  /* -------- */
-};
+  volt32_oi_decode_t ret =
+  {
+    .opc_info=NULL,
+    .error={.grp_oor=false, .op_oor=false}
+  };
+
+  #define VOLT32_X(num, oi, dim) \
+    case num : \
+    { \
+      if ((opcode >= 0) && (opcode < dim)) \
+      { \
+        ret.opc_info = (oi) + opcode; \
+      } \
+      else \
+      { \
+        ret.error.op_oor = true; \
+      } \
+      return ret; \
+    } \
+
+  switch (group)
+  {
+    VOLT32_LIST_OF_OI(VOLT32_X);
+
+    default:
+      ret.error.grp_oor = true;
+      return ret;
+  }
+
+  #undef VOLT32_X
+
+  return ret;
+}
 /* -------- */

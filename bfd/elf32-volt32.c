@@ -145,31 +145,31 @@ static reloc_howto_type volt32_elf_howto_table [] =
          0x000003f0,            /* dst_mask */
          false),                /* pcrel_offset */
 /* -------- */
-  HOWTO (R_VOLT32_G12_SIMM21,   /* type */
+  HOWTO (R_VOLT32_G12_SIMM20,   /* type */
          0,                     /* rightshift */
          3,                     /* size */
-         21,                    /* bitsize */
+         20,                    /* bitsize */
          false,                 /* pc_relative */
-         1,                     /* bitpos */
+         2,                     /* bitpos */
          complain_overflow_signed, /* complain_on_overflow */
          volt32_reloc,          /* special_function */
-         "R_VOLT32_G12_SIMM21", /* name */
+         "R_VOLT32_G12_SIMM20", /* name */
          false,                 /* partial_inplace */
          0x00000000,            /* src_mask */
-         0x003ffffe,            /* dst_mask */
+         0x003ffffc,            /* dst_mask */
          false),                /* pcrel_offset */
-  HOWTO (R_VOLT32_G12_SIMM21_PCREL,   /* type */
+  HOWTO (R_VOLT32_G12_SIMM20_PCREL,   /* type */
          0,                     /* rightshift */
          3,                     /* size */
-         21,                    /* bitsize */
+         20,                    /* bitsize */
          true,                  /* pc_relative */
-         1,                     /* bitpos */
+         2,                     /* bitpos */
          complain_overflow_signed, /* complain_on_overflow */
          volt32_reloc,          /* special_function */
-         "R_VOLT32_G12_SIMM21_PCREL", /* name */
+         "R_VOLT32_G12_SIMM20_PCREL", /* name */
          false,                 /* partial_inplace */
          0x00000000,            /* src_mask */
-         0x003ffffe,            /* dst_mask */
+         0x003ffffc,            /* dst_mask */
          true),                 /* pcrel_offset */
 /* -------- */
 //  /* A 15 bit PC-relative relocation.  */
@@ -220,8 +220,8 @@ static const struct volt32_reloc_map volt32_reloc_map [] =
   {BFD_RELOC_VOLT32_G8_IIMM5,            R_VOLT32_G8_IIMM5},
   {BFD_RELOC_VOLT32_G8_JIMM5,            R_VOLT32_G8_JIMM5},
   {BFD_RELOC_VOLT32_G9_IMM6,             R_VOLT32_G9_IMM6},
-  {BFD_RELOC_VOLT32_G12_SIMM21,          R_VOLT32_G12_SIMM21},
-  {BFD_RELOC_VOLT32_G12_SIMM21_PCREL,    R_VOLT32_G12_SIMM21_PCREL},
+  {BFD_RELOC_VOLT32_G12_SIMM20,          R_VOLT32_G12_SIMM20},
+  {BFD_RELOC_VOLT32_G12_SIMM20_PCREL,    R_VOLT32_G12_SIMM20_PCREL},
 };
 
 static reloc_howto_type *

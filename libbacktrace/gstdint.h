@@ -1,4 +1,4 @@
-/* generated for  gcc (GCC) 12.1.0 */
+/* generated for  gcc (GCC) 12.1.1 20220730 */
 
 #ifndef GCC_GENERATED_STDINT_H
 #define GCC_GENERATED_STDINT_H 1

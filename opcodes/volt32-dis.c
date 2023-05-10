@@ -32,6 +32,18 @@
 //static fprintf_ftype fpr;
 //static void *stream;
 
+const char *volt32_ilar_names[VOLT32_NUM_ILARS] =
+{
+  "i0", "i1", "i2", "i3", "i4", "i5", "i6", "i7",
+  "i8", "i9", "i10", "i11", "i12", "i13", "i14", "i15",
+  "i16", "i17", "i18", "i19", "i20", "i21", "i22", "i23",
+  "i24", "i25", "i26", "i27", "i28", "i29", "i30", "i31",
+  "i32", "i33", "i34", "i35", "i36", "i37", "i38", "i39",
+  "i40", "i41", "i42", "i43", "i44", "i45", "i46", "i47",
+  "i48", "i49", "i50", "i51", "i52", "i53", "i54", "i55",
+  "i56", "i57", "i58", "i59", "i60", "i61", "i62", "ipc"
+};
+
 const char *volt32_dlar_names[VOLT32_NUM_DLARS] =
 {
   "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7",
@@ -44,17 +56,27 @@ const char *volt32_dlar_names[VOLT32_NUM_DLARS] =
   "d56", "d57", "d58", "dt0", "dt1", "dcp", "dfp", "dsp"
 };
 
-const char *volt32_ilar_names[VOLT32_NUM_ILARS] =
+const char *volt32_auto_reg_names[VOLT32_NUM_AUTO_REGS] =
 {
-  "i0", "i1", "i2", "i3", "i4", "i5", "i6", "i7",
-  "i8", "i9", "i10", "i11", "i12", "i13", "i14", "i15",
-  "i16", "i17", "i18", "i19", "i20", "i21", "i22", "i23",
-  "i24", "i25", "i26", "i27", "i28", "i29", "i30", "i31",
-  "i32", "i33", "i34", "i35", "i36", "i37", "i38", "i39",
-  "i40", "i41", "i42", "i43", "i44", "i45", "i46", "i47",
-  "i48", "i49", "i50", "i51", "i52", "i53", "i54", "i55",
-  "i56", "i57", "i58", "i59", "i60", "i61", "i62", "ipc"
+  /* -------- */
+  "r0",
+  /* -------- */
+  "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8",
+  "s9", "s10", "s11", "s12", "s13", "s14", "s15", "s16",
+  "s17", "s18", "s19", "s20", "s21", "s22", "s23", "s24",
+  /* -------- */
+  "v25", "v26", "v27", "v28", "v29", "v30", "v31", "v32",
+  "v33", "v34", "v35", "v36", "v37", "v38", "v39",
+  /* -------- */
 };
+
+const char
+  *volt32_reg_inten_name = "inten",
+  *volt32_reg_xct_name = "xct",
+  *volt32_reg_swiarg0_name = "swiarg0",
+  *volt32_reg_swiarg1_name = "swiarg1",
+  *volt32_reg_swiarg2_name = "swiarg2",
+  *volt32_reg_swiarg3_name = "swiarg3";
 /* -------- */
 //int
 //print_insn_volt32 (bfd_vma addr, struct disassemble_info * info)
